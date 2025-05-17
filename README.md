@@ -1,6 +1,5 @@
 # 👻 ghostbrew
 
-[![Go Build](https://github.com/ghostkellz/ghostbrew/actions/workflows/go.yml/badge.svg)](https://github.com/ghostkellz/ghostbrew/actions)
 [![Arch Linux](https://img.shields.io/badge/platform-Arch%20Linux-1793d1?logo=arch-linux&logoColor=white)](https://archlinux.org)
 [![Made with Go](https://img.shields.io/badge/made%20with-Go-00ADD8?logo=go&logoColor=white)](https://golang.org)
 [![Repo Status](https://img.shields.io/badge/status-active-success?style=flat-square)](https://github.com/ghostkellz/ghostbrew)
