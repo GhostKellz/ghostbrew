@@ -1,11 +1,11 @@
 /*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+Copyright © 2025 Christopher Kelley <ckelley@ghostkellz.sh>
 */
 package cmd
 
 import (
 	"fmt"
-
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,24 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("search called")
+		if len(args) == 0 {
+			fmt.Println("Please provide a search term.")
+			return
+		}
+		searchTerm := args[0]
+		// Simulate search results (replace with real AUR search logic)
+		results := []string{"hyprland-git", "hyprland-bin", "hyprland-extras"}
+		prompt := promptui.Select{
+			Label: "Select package to install",
+			Items: results,
+		}
+		_, result, err := prompt.Run()
+		if err != nil {
+			fmt.Printf("Prompt failed %v\n", err)
+			return
+		}
+		fmt.Printf("You selected %q. Installing...\n", result)
+		// Call parallel installer here (to be implemented)
 	},
 }
 
