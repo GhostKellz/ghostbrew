@@ -3,9 +3,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -89,10 +91,33 @@ func checkGPGKey(pkg string) {
 	fmt.Printf("[GPG] Checking keys for %s...\n", pkg)
 }
 
-// inspectPKGBUILD fetches and inspects PKGBUILD for risky commands (stub)
+// inspectPKGBUILD fetches and inspects PKGBUILD for risky commands
 func inspectPKGBUILD(pkg string) {
-	// TODO: Fetch PKGBUILD and highlight risky commands
-	fmt.Printf("[AUDIT] Inspecting PKGBUILD for %s...\n", pkg)
+	// Fetch PKGBUILD from AUR
+	url := fmt.Sprintf("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=%s", pkg)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("[AUDIT] Failed to fetch PKGBUILD for %s: %v\n", pkg, err)
+		return
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("[AUDIT] Failed to read PKGBUILD for %s: %v\n", pkg, err)
+		return
+	}
+	pkgb := string(data)
+	fmt.Printf("[AUDIT] PKGBUILD for %s:\n", pkg)
+	fmt.Println("----------------------------------------")
+	fmt.Println(pkgb)
+	fmt.Println("----------------------------------------")
+	// Highlight risky commands
+	keywords := []string{"curl", "wget", "sudo", "rm -rf", "chmod", "chown", "dd", "mkfs", "mount", "scp", "nc", "ncat", "bash -c", "eval"}
+	for _, k := range keywords {
+		if strings.Contains(pkgb, k) {
+			fmt.Printf("[AUDIT][RISK] Found risky command: %s\n", k)
+		}
+	}
 }
 
 func InstallPackages(pkgs []string, opts InstallOptions) {
