@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,6 @@ to quickly create a Cobra application.`,
 			fmt.Println("Please provide a search term.")
 			return
 		}
-		searchTerm := args[0]
 		// Simulate search results (replace with real AUR search logic)
 		results := []string{"hyprland-git", "hyprland-bin", "hyprland-extras"}
 		prompt := promptui.Select{
@@ -37,7 +37,8 @@ to quickly create a Cobra application.`,
 			return
 		}
 		fmt.Printf("You selected %q. Installing...\n", result)
-		// Call parallel installer here (to be implemented)
+		// Call parallel installer for the selected package
+		InstallPackages([]string{result}, InstallOptions{Parallel: 2})
 	},
 }
 
