@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -11,7 +12,17 @@ var completionCmd = &cobra.Command{
 	Short: "Generate shell completions",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("[TODO] Shell completion for %s not yet implemented.\n", args[0])
+		shell := args[0]
+		switch shell {
+		case "bash":
+			rootCmd.GenBashCompletion(os.Stdout)
+		case "zsh":
+			rootCmd.GenZshCompletion(os.Stdout)
+		case "fish":
+			rootCmd.GenFishCompletion(os.Stdout, true)
+		default:
+			fmt.Println("Unsupported shell. Use bash, zsh, or fish.")
+		}
 	},
 }
 
