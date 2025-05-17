@@ -129,6 +129,7 @@ func InstallPackages(pkgs []string, opts InstallOptions) {
 	}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, opts.Parallel)
+	fmt.Printf("[INFO] Install order: %v\n", order)
 	for _, pkg := range order {
 		wg.Add(1)
 		go func(pkg string) {
@@ -137,12 +138,15 @@ func InstallPackages(pkgs []string, opts InstallOptions) {
 			defer func() { <-sem }()
 			checkGPGKey(pkg)
 			inspectPKGBUILD(pkg)
-			fmt.Printf("Building and installing %s...\n", pkg)
+			fmt.Printf("[SECURE] Building and installing %s...\n", pkg)
 			cmd := exec.Command("echo", "Simulating build/install for "+pkg)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("[ERROR] Build/install failed for %s: %v\n", pkg, err)
+			}
 		}(pkg)
 	}
 	wg.Wait()
+	fmt.Println("[INFO] All packages processed.")
 }
