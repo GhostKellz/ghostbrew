@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -29,15 +29,15 @@ func (a aurPkg) Description() string { return a.Desc }
 func (a aurPkg) FilterValue() string { return a.Name }
 
 type model struct {
-	list      list.Model
-	loading   bool
-	error     string
-	quitting  bool
-	showInfo  bool
-	showPKGB  bool
-	selected  map[int]struct{}
-	pkgb      string
-	deps      []string
+	list     list.Model
+	loading  bool
+	error    string
+	quitting bool
+	showInfo bool
+	showPKGB bool
+	selected map[int]struct{}
+	pkgb     string
+	deps     []string
 }
 
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
@@ -128,8 +128,23 @@ func (m model) View() string {
 	deps := ""
 	if len(m.deps) > 0 {
 		deps = "\n[Deps] " + strings.Join(m.deps, ", ")
+		deps += "\n" + renderDepTree(m.deps, 0)
 	}
 	return mainView + info + pkgb + deps + "\n[j] down  [k] up  [/] search  [space] select  [enter] install  [i] info  [p] PKGBUILD  [d] deps  [q] quit"
+}
+
+// Dependency tree visualization (simple, recursive)
+func renderDepTree(deps []string, level int) string {
+	if len(deps) == 0 || level > 3 { // limit depth
+		return ""
+	}
+	indent := strings.Repeat("  ", level)
+	var out string
+	for _, dep := range deps {
+		out += fmt.Sprintf("%s- %s\n", indent, dep)
+		// Optionally, fetch sub-deps here for a real tree (stubbed for now)
+	}
+	return out
 }
 
 func StartTUI() {
