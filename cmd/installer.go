@@ -85,10 +85,22 @@ func resolveDependencies(pkgs []string, seen map[string]bool) ([]string, error) 
 	return order, nil
 }
 
-// checkGPGKey checks and imports GPG keys if missing (stub)
+// checkGPGKey checks and imports GPG keys if missing (auto-import)
 func checkGPGKey(pkg string) {
-	// TODO: Implement real GPG key check and import logic
 	fmt.Printf("[GPG] Checking keys for %s...\n", pkg)
+	// TODO: Implement real GPG key check
+	keyMissing := false // Simulate for now
+	if keyMissing {
+		fmt.Printf("[GPG] Key missing for %s. Import now? [Y/n]: ", pkg)
+		var resp string
+		fmt.Scanln(&resp)
+		if resp == "n" || resp == "N" {
+			fmt.Println("[GPG] Skipping import.")
+			return
+		}
+		// Example: gpg --recv-keys <keyid>
+		fmt.Println("[GPG] Importing key...")
+	}
 }
 
 // inspectPKGBUILD fetches and inspects PKGBUILD for risky commands

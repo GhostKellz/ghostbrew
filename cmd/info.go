@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var infoCmd = &cobra.Command{
 		pkg := args[0]
 		resp, err := http.Get("https://aur.archlinux.org/rpc/?v=5&type=info&arg=" + pkg)
 		if err != nil {
-			fmt.Println("Failed to fetch info:", err)
+			color.Red("Failed to fetch info: %v", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
@@ -35,11 +35,17 @@ var infoCmd = &cobra.Command{
 			}
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Results) == 0 {
-			fmt.Println("No info found or failed to parse.")
+			color.Red("No info found or failed to parse.")
 			return
 		}
 		info := result.Results[0]
-		fmt.Printf("Name: %s\nVersion: %s\nDescription: %s\nMaintainer: %s\nVotes: %d\nPopularity: %.2f\nURL: %s\n", info.Name, info.Version, info.Description, info.Maintainer, info.Votes, info.Popularity, info.URL)
+		color.Cyan("Name:        %s", info.Name)
+		color.Yellow("Version:     %s", info.Version)
+		color.White("Description: %s", info.Description)
+		color.Green("Maintainer:  %s", info.Maintainer)
+		color.Magenta("Votes:       %d", info.Votes)
+		color.Blue("Popularity:  %.2f", info.Popularity)
+		color.HiCyan("URL:         %s", info.URL)
 	},
 }
 
