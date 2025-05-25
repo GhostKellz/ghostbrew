@@ -21,6 +21,11 @@ pkgver() {
   git describe --tags --abbrev=0 | sed 's/^v//;s/-/./g'
 }
 
+prepare() {
+  cd "$srcdir/$gitname"
+  go mod tidy
+}
+
 build() {
   cd "$srcdir/$gitname"
   go build -o ghostbrew
