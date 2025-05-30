@@ -82,8 +82,6 @@ ghostbrew/
 │   ├── config.rs         # YAML config loader
 │   ├── gpg.rs            # GPG key handling
 │   └── main.rs           # CLI entry point
-├── archive/
-│   └── go-v0.1/          # Legacy Go prototype
 ├── Cargo.toml
 ├── README.md
 └── LICENSE
