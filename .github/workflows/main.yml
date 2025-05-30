@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    name: Build on ghost-nv
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: clippy, rustfmt
+
+      - name: Clippy Check
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: ./ghostbrew
+
+      - name: Format Check
+        run: cargo fmt --check
+        working-directory: ./ghostbrew
+
+      - name: Build
+        run: cargo build --verbose
+        working-directory: ./ghostbrew
+
+      - name: Test
+        run: cargo test --verbose
+        working-directory: ./ghostbrew

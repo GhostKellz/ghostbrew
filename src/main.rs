@@ -1,3 +1,13 @@
+mod tui;
+mod aur;
+mod pacman;
+mod config;
+mod gpg;
+mod hooks;
+mod utils;
+mod core;
+mod flatpak;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -11,6 +21,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Launch the interactive TUI
+    Tui,
     /// Search the AUR for a package
     Search {
         query: String,
@@ -19,26 +31,37 @@ enum Commands {
     Install {
         package: String,
     },
-    /// Upgrade installed AUR packages
+    /// Upgrade installed packages
     Upgrade,
+    /// Add a private tap/repo
+    Tap {
+        repo: String,
+    },
+    /// Run a shell completion script
+    Completion {
+        shell: String,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Search { query } => {
-            println!("🔍 Searching for package: {query}");
-            // stub
-        }
+        Commands::Tui => tui::run(),
+        Commands::Search { query } => aur::search(query),
         Commands::Install { package } => {
-            println!("📦 Installing package: {package}");
-            // stub
-        }
+            // PKGBUILD diff/audit before install
+            let pkgb = aur::get_pkgbuild_preview(&package);
+            utils::pkgb_diff_audit(&package, &pkgb);
+            aur::install(&package);
+        },
         Commands::Upgrade => {
-            println!("♻️ Upgrading AUR packages...");
-            // stub
-        }
+            // For each upgradable package, show PKGBUILD diff/audit and changelog before upgrade
+            // (You can expand aur::upgrade to handle this per-package)
+            aur::upgrade();
+        },
+        Commands::Tap { repo } => aur::add_tap(repo),
+        Commands::Completion { shell } => utils::completion(shell),
     }
 }
 
