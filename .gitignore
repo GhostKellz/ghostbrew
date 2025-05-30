@@ -1,0 +1,32 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Binaries
+*.exe
+*.out
+*.o
+*.so
+*.dylib
+*.rlib
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+
+# macOS/Linux
+.DS_Store
+*.log
+
+# Build helpers
+*.tar.gz
+*.pkg.tar.zst
+
+# Go legacy (if needed)
+/archive/go-v0.1/bin/
+/archive/go-v0.1/.go-build
+/target
