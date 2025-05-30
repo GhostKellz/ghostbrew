@@ -23,16 +23,16 @@ jobs:
 
       - name: Clippy Check
         run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: ./ghostbrew
+        working-directory: ./
 
       - name: Format Check
         run: cargo fmt --check
-        working-directory: ./ghostbrew
+        working-directory: ./
 
       - name: Build
         run: cargo build --verbose
-        working-directory: ./ghostbrew
+        working-directory: ./
 
       - name: Test
         run: cargo test --verbose
-        working-directory: ./ghostbrew
+        working-directory: ./
