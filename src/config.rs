@@ -19,10 +19,8 @@ impl BrewConfig {
         if let Ok(script) = fs::read_to_string(&config_path) {
             if let Ok(table) = lua.load(&script).eval::<mlua::Table>() {
                 if let Ok(pkgs) = table.get::<_, mlua::Table>("ignored_packages") {
-                    for pair in pkgs.sequence_values::<String>() {
-                        if let Ok(pkg) = pair {
-                            ignored_packages.push(pkg);
-                        }
+                    for pkg in pkgs.sequence_values::<String>().flatten() {
+                        ignored_packages.push(pkg);
                     }
                 }
                 if let Ok(p) = table.get::<_, usize>("parallel") {

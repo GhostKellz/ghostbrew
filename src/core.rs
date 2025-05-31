@@ -54,9 +54,9 @@ pub fn unified_search(query: &str) -> Vec<SearchResult> {
     // AUR search
     for pkg in aur::aur_search_results(query) {
         results.push(SearchResult {
-            name: pkg.Name.clone(),
-            version: pkg.Version.clone(),
-            description: pkg.Description.clone().unwrap_or_default(),
+            name: pkg.name.clone(),
+            version: pkg.version.clone(),
+            description: pkg.description.clone().unwrap_or_default(),
             source: Source::Aur,
         });
     }
@@ -84,21 +84,20 @@ pub fn print_search_results(results: &[SearchResult]) {
     }
 }
 
-pub fn install_with_priority(pkg: &str, config: &config::BrewConfig) {
+pub fn install_with_priority(pkg: &str, _config: &config::BrewConfig) {
     // Load priorities from Lua config if present
     let priorities = vec![Source::Pacman, Source::Aur, Source::Flatpak];
     // Example: check for 'priorities' in config (as Vec<String>)
     // (Assume config.lua exposes a 'priorities' table: {"pacman", "aur", "flatpak"})
     // You'd parse this in config.rs and convert to Source enum here
     // For now, use the default order above
-    for src in priorities {
+    if let Some(src) = priorities.into_iter().next() {
         match src {
             Source::Pacman => {
                 pacman::install(pkg);
                 return;
             }
             Source::ChaoticAUR => {
-                // For now, treat like Pacman (or add custom logic)
                 pacman::install(pkg);
                 return;
             }

@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    name: Build on ghost-nv
+    name: Build on nv-palladium
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3

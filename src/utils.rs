@@ -109,7 +109,7 @@ pub async fn async_aur_search_cached(query: &str) -> Vec<aur::AurResult> {
         if let Ok(json) = resp.json::<aur::AurResponse>().await {
             let mut cache = AUR_CACHE.lock().unwrap();
             for pkg in &json.results {
-                cache.insert(pkg.Name.clone(), pkg.clone());
+                cache.insert(pkg.name.clone(), pkg.clone());
             }
             return json.results;
         }
