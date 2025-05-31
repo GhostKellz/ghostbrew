@@ -86,7 +86,7 @@ pub fn print_search_results(results: &[SearchResult]) {
 
 pub fn install_with_priority(pkg: &str, config: &config::BrewConfig) {
     // Load priorities from Lua config if present
-    let mut priorities = vec![Source::Pacman, Source::Aur, Source::Flatpak];
+    let priorities = vec![Source::Pacman, Source::Aur, Source::Flatpak];
     // Example: check for 'priorities' in config (as Vec<String>)
     // (Assume config.lua exposes a 'priorities' table: {"pacman", "aur", "flatpak"})
     // You'd parse this in config.rs and convert to Source enum here

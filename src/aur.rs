@@ -1,8 +1,3 @@
-use reqwest::blocking::get;
-use serde::Deserialize;
-use std::process::Command;
-use std::thread;
-use std::sync::mpsc;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct AurResult {

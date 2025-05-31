@@ -1,4 +1,4 @@
-use mlua::{Lua, Result as LuaResult, Value};
+use mlua::Lua;
 use std::fs;
 use std::path::PathBuf;
 
