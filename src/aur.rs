@@ -90,7 +90,7 @@ pub fn get_deps(pkg: &str) -> Vec<String> {
     let mut deps = Vec::new();
     for line in pkgb.lines() {
         if line.trim_start().starts_with("depends=") {
-            let dep_line = line.splitn(2, '=').nth(1).unwrap_or("").trim();
+            let dep_line = line.split_once('=').map(|x| x.1).unwrap_or("").trim();
             let dep_line = dep_line.trim_matches(&['(', ')', '"', '\'', ' '] as &[_]);
             deps.extend(dep_line.split_whitespace().map(|s| s.trim_matches(&['"', '\'', ' '] as &[_])).filter(|s| !s.is_empty()).map(|s| s.to_string()));
         }
