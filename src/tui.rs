@@ -38,7 +38,7 @@ fn run_lua_hook(hook: &str, pkg: &str) {
         .join(".config/ghostbrew/brew.lua");
     if let Ok(script) = std::fs::read_to_string(&config_path) {
         let lua = Lua::new();
-        if let Ok(_) = lua.load(&script).exec() {
+        if lua.load(&script).exec().is_ok() {
             let globals = lua.globals();
             if let Ok(func) = globals.get::<_, mlua::Function>(hook) {
                 let _ = func.call::<_, ()>(pkg);
@@ -117,7 +117,7 @@ pub fn run() {
                         if selected + 1 < results.len() { selected += 1; }
                     }
                     KeyCode::Up => {
-                        if selected > 0 { selected -= 1; }
+                        selected = selected.saturating_sub(1);
                     }
                     KeyCode::Char(' ') => {
                         if selected_pkgs.contains(&selected) {
