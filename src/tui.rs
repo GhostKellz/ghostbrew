@@ -1,12 +1,12 @@
-use ratatui::prelude::{Layout, Constraint, Direction};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
-use ratatui::style::{Style, Color};
-use crossterm::event::{self, Event, KeyCode};
 use crate::core;
-use tokio::runtime::Runtime;
 use crate::utils::async_get_pkgbuild_cached;
+use crossterm::event::{self, Event, KeyCode};
 use mlua::Lua;
+use ratatui::prelude::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use std::sync::{Arc, Mutex};
+use tokio::runtime::Runtime;
 
 // Log pane state
 struct LogPane {
@@ -15,12 +15,16 @@ struct LogPane {
 
 impl LogPane {
     fn new() -> Self {
-        Self { lines: Arc::new(Mutex::new(Vec::new())) }
+        Self {
+            lines: Arc::new(Mutex::new(Vec::new())),
+        }
     }
     fn push(&self, line: &str) {
         let mut lines = self.lines.lock().unwrap();
         lines.push(line.to_string());
-        if lines.len() > 1000 { lines.remove(0); }
+        if lines.len() > 1000 {
+            lines.remove(0);
+        }
     }
     fn get(&self) -> Vec<String> {
         self.lines.lock().unwrap().clone()
@@ -64,45 +68,80 @@ pub fn run() {
     let help_text = "[ghostbrew TUI]\n/ search | d details | space select | enter install | l log | h help | c clear log | q quit";
 
     loop {
-        terminal.draw(|f| {
-            let size = f.size();
-            let chunks = Layout::default().direction(Direction::Vertical).margin(0).constraints([
-                Constraint::Min(10), Constraint::Length(7)
-            ]).split(size);
-            let block = Block::default().title("ghostbrew unified search").borders(Borders::ALL);
-            let items: Vec<ListItem> = results.iter().enumerate().map(|(i, r)| {
-                let color = match r.source.label() {
-                    "[AUR]" => Color::Yellow,
-                    "[ChaoticAUR]" => Color::Magenta,
-                    "[Flatpak]" => Color::Cyan,
-                    _ => Color::White,
-                };
-                let style = if i == selected { Style::default().fg(Color::Black).bg(Color::White) } else { Style::default().fg(color) };
-                let prefix = if selected_pkgs.contains(&i) { "[*] " } else { "    " };
-                ListItem::new(format!("{}{} {} {} - {}", prefix, r.source.label(), r.name, r.version, r.description)).style(style)
-            }).collect();
-            let list = List::new(items).block(block).highlight_symbol("▶ ");
-            f.render_widget(list, chunks[0]);
-            let mut details = String::new();
-            if show_details {
-                if let Some(pkg) = results.get(selected) {
-                    if pkg.source == core::Source::Aur {
-                        details = pkgb_preview.clone();
-                        details.push_str("\n[Deps]: ");
-                        details.push_str(&format!("{:?}", crate::aur::get_deps(&pkg.name)));
-                    } else {
-                        details = format!("No PKGBUILD for {}", pkg.name);
+        terminal
+            .draw(|f| {
+                let size = f.size();
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .margin(0)
+                    .constraints([Constraint::Min(10), Constraint::Length(7)])
+                    .split(size);
+                let block = Block::default()
+                    .title("ghostbrew unified search")
+                    .borders(Borders::ALL);
+                let items: Vec<ListItem> = results
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let color = match r.source.label() {
+                            "[AUR]" => Color::Yellow,
+                            "[ChaoticAUR]" => Color::Magenta,
+                            "[Flatpak]" => Color::Cyan,
+                            _ => Color::White,
+                        };
+                        let style = if i == selected {
+                            Style::default().fg(Color::Black).bg(Color::White)
+                        } else {
+                            Style::default().fg(color)
+                        };
+                        let prefix = if selected_pkgs.contains(&i) {
+                            "[*] "
+                        } else {
+                            "    "
+                        };
+                        ListItem::new(format!(
+                            "{}{} {} {} - {}",
+                            prefix,
+                            r.source.label(),
+                            r.name,
+                            r.version,
+                            r.description
+                        ))
+                        .style(style)
+                    })
+                    .collect();
+                let list = List::new(items).block(block).highlight_symbol("▶ ");
+                f.render_widget(list, chunks[0]);
+                let mut details = String::new();
+                if show_details {
+                    if let Some(pkg) = results.get(selected) {
+                        if pkg.source == core::Source::Aur {
+                            details = pkgb_preview.clone();
+                            details.push_str("\n[Deps]: ");
+                            details.push_str(&format!("{:?}", crate::aur::get_deps(&pkg.name)));
+                        } else {
+                            details = format!("No PKGBUILD for {}", pkg.name);
+                        }
                     }
                 }
-            }
-            let log_lines = log_pane.get().join("\n");
-            let status_p = Paragraph::new(
-                if show_help { help_text.into() }
-                else if show_log { log_lines }
-                else { status.clone() + "\n" + &details }
-            ).block(Block::default().borders(Borders::ALL).title(if show_log { "Log" } else { "Status/Details" }));
-            f.render_widget(status_p, chunks[1]);
-        }).unwrap();
+                let log_lines = log_pane.get().join("\n");
+                let status_p = Paragraph::new(if show_help {
+                    help_text.into()
+                } else if show_log {
+                    log_lines
+                } else {
+                    status.clone() + "\n" + &details
+                })
+                .block(
+                    Block::default().borders(Borders::ALL).title(if show_log {
+                        "Log"
+                    } else {
+                        "Status/Details"
+                    }),
+                );
+                f.render_widget(status_p, chunks[1]);
+            })
+            .unwrap();
 
         if event::poll(std::time::Duration::from_millis(200)).unwrap() {
             if let Event::Key(key) = event::read().unwrap() {
@@ -114,7 +153,9 @@ pub fn run() {
                         selected = 0;
                     }
                     KeyCode::Down => {
-                        if selected + 1 < results.len() { selected += 1; }
+                        if selected + 1 < results.len() {
+                            selected += 1;
+                        }
                     }
                     KeyCode::Up => {
                         selected = selected.saturating_sub(1);
@@ -131,7 +172,8 @@ pub fn run() {
                         if show_details {
                             if let Some(pkg) = results.get(selected) {
                                 if pkg.source == core::Source::Aur {
-                                    pkgb_preview = rt.block_on(async_get_pkgbuild_cached(&pkg.name));
+                                    pkgb_preview =
+                                        rt.block_on(async_get_pkgbuild_cached(&pkg.name));
                                 }
                             }
                         }
@@ -147,9 +189,16 @@ pub fn run() {
                     }
                     KeyCode::Enter => {
                         let to_install: Vec<String> = if selected_pkgs.is_empty() {
-                            results.get(selected).map(|p| p.name.clone()).into_iter().collect()
+                            results
+                                .get(selected)
+                                .map(|p| p.name.clone())
+                                .into_iter()
+                                .collect()
                         } else {
-                            selected_pkgs.iter().filter_map(|&i| results.get(i).map(|p| p.name.clone())).collect()
+                            selected_pkgs
+                                .iter()
+                                .filter_map(|&i| results.get(i).map(|p| p.name.clone()))
+                                .collect()
                         };
                         for pkg in &to_install {
                             run_lua_hook("pre_install", pkg);
@@ -181,9 +230,9 @@ fn prompt_for_query() -> String {
 }
 
 fn setup_terminal() -> ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>> {
-    use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
-    use std::io::stdout;
     use crossterm::execute;
+    use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
+    use std::io::stdout;
     enable_raw_mode().unwrap();
     execute!(stdout(), EnterAlternateScreen).unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(stdout());
@@ -191,9 +240,9 @@ fn setup_terminal() -> ratatui::Terminal<ratatui::backend::CrosstermBackend<std:
 }
 
 fn restore_terminal() {
-    use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
-    use std::io::stdout;
     use crossterm::execute;
+    use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
+    use std::io::stdout;
     disable_raw_mode().unwrap();
     execute!(stdout(), LeaveAlternateScreen).unwrap();
 }

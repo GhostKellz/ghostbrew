@@ -31,7 +31,10 @@ impl BrewConfig {
                 }
             }
         }
-        BrewConfig { ignored_packages, parallel }
+        BrewConfig {
+            ignored_packages,
+            parallel,
+        }
     }
 
     /// Check if a package is ignored (used in upgrade/install logic)

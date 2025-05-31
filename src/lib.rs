@@ -1,11 +1,11 @@
-pub mod core;
 pub mod aur;
-pub mod pacman;
-pub mod flatpak;
 pub mod config;
-pub mod utils;
-pub mod hooks;
+pub mod core;
+pub mod flatpak;
 pub mod gpg;
+pub mod hooks;
+pub mod pacman;
+pub mod utils;
 
-pub use crate::core::{unified_search, install_with_priority, SearchResult, Source};
 pub use crate::aur::get_deps;
+pub use crate::core::{SearchResult, Source, install_with_priority, unified_search};

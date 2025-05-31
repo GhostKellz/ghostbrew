@@ -1,12 +1,12 @@
-mod tui;
 mod aur;
-mod pacman;
 mod config;
-mod gpg;
-mod hooks;
-mod utils;
 mod core;
 mod flatpak;
+mod gpg;
+mod hooks;
+mod pacman;
+mod tui;
+mod utils;
 
 use clap::{Parser, Subcommand};
 
@@ -24,9 +24,7 @@ enum Commands {
     /// Launch the interactive TUI
     Tui,
     /// Search the AUR for a package
-    Search {
-        query: String,
-    },
+    Search { query: String },
     /// Install a package
     Install {
         package: String,
@@ -36,31 +34,19 @@ enum Commands {
     /// Upgrade installed packages
     Upgrade,
     /// Add a private tap/repo
-    Tap {
-        repo: String,
-    },
+    Tap { repo: String },
     /// Run a shell completion script
-    Completion {
-        shell: String,
-    },
+    Completion { shell: String },
     /// Rollback a package to previous version
-    Rollback {
-        package: String,
-    },
+    Rollback { package: String },
     /// Flatpak search
-    FlatpakSearch {
-        query: String,
-    },
+    FlatpakSearch { query: String },
     /// Flatpak upgrade
     FlatpakUpgrade,
     /// Flatpak sandbox info
-    FlatpakSandboxInfo {
-        package: String,
-    },
+    FlatpakSandboxInfo { package: String },
     /// Search the AUR directly
-    AurSearch {
-        query: String,
-    },
+    AurSearch { query: String },
 }
 
 fn main() {
@@ -82,7 +68,7 @@ fn main() {
                     }
                 }
             }
-        },
+        }
         Commands::Install { package, gpg_key } => {
             if let Some(key) = gpg_key {
                 gpg::check_key(key);
@@ -92,30 +78,29 @@ fn main() {
             utils::pkgb_diff_audit(package, &pkgb);
             aur::install(package);
             hooks::run_hook("post_install", package);
-        },
+        }
         Commands::Upgrade => {
             hooks::run_hook("pre_upgrade", "");
             aur::upgrade();
             flatpak::upgrade();
             hooks::run_hook("post_upgrade", "");
-        },
+        }
         Commands::Tap { repo } => aur::add_tap(repo),
         Commands::Completion { shell } => utils::completion(shell),
         Commands::Rollback { package } => {
             utils::rollback(package);
-        },
+        }
         Commands::FlatpakSearch { query } => {
             flatpak::search(query);
-        },
+        }
         Commands::FlatpakUpgrade => {
             flatpak::upgrade();
-        },
+        }
         Commands::FlatpakSandboxInfo { package } => {
             flatpak::print_flatpak_sandbox_info(package);
-        },
+        }
         Commands::AurSearch { query } => {
             aur::search(query);
-        },
+        }
     }
 }
-

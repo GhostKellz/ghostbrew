@@ -1,4 +1,4 @@
-use crate::{aur, pacman, flatpak, config};
+use crate::{aur, config, flatpak, pacman};
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq)]
 pub enum Source {
@@ -29,7 +29,11 @@ pub struct SearchResult {
 pub fn unified_search(query: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
     // Pacman & ChaoticAUR search (distinguish by repo prefix)
-    if let Ok(output) = std::process::Command::new("pacman").arg("-Ss").arg(query).output() {
+    if let Ok(output) = std::process::Command::new("pacman")
+        .arg("-Ss")
+        .arg(query)
+        .output()
+    {
         let out = String::from_utf8_lossy(&output.stdout);
         for line in out.lines() {
             if let Some((repo_and_name, rest)) = line.split_once(' ') {
@@ -61,7 +65,11 @@ pub fn unified_search(query: &str) -> Vec<SearchResult> {
         });
     }
     // Flatpak search
-    if let Ok(output) = std::process::Command::new("flatpak").arg("search").arg(query).output() {
+    if let Ok(output) = std::process::Command::new("flatpak")
+        .arg("search")
+        .arg(query)
+        .output()
+    {
         let out = String::from_utf8_lossy(&output.stdout);
         for line in out.lines().skip(1) {
             let cols: Vec<&str> = line.split_whitespace().collect();
@@ -80,7 +88,13 @@ pub fn unified_search(query: &str) -> Vec<SearchResult> {
 
 pub fn print_search_results(results: &[SearchResult]) {
     for r in results {
-        println!("{} {} {} - {}", r.source.label(), r.name, r.version, r.description);
+        println!(
+            "{} {} {} - {}",
+            r.source.label(),
+            r.name,
+            r.version,
+            r.description
+        );
     }
 }
 

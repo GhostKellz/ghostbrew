@@ -3,21 +3,35 @@
 pub fn check_key(key: &str) {
     println!("Checking GPG key: {}", key);
     // Example: actually call gpg --list-keys and import if missing
-    let status = std::process::Command::new("gpg").arg("--list-keys").arg(key).status();
+    let status = std::process::Command::new("gpg")
+        .arg("--list-keys")
+        .arg(key)
+        .status();
     if let Ok(s) = status {
         if !s.success() {
-            println!("[ghostbrew] GPG key {} not found, attempting import...", key);
+            println!(
+                "[ghostbrew] GPG key {} not found, attempting import...",
+                key
+            );
             // Attempt to import from a secure keyserver
             let import_status = std::process::Command::new("gpg")
-                .arg("--keyserver").arg("hkps://keyserver.ubuntu.com")
-                .arg("--recv-keys").arg(key)
+                .arg("--keyserver")
+                .arg("hkps://keyserver.ubuntu.com")
+                .arg("--recv-keys")
+                .arg(key)
                 .status();
             match import_status {
                 Ok(import) if import.success() => {
-                    println!("[ghostbrew] Successfully imported GPG key {} from keyserver.", key);
+                    println!(
+                        "[ghostbrew] Successfully imported GPG key {} from keyserver.",
+                        key
+                    );
                 }
                 Ok(_) | Err(_) => {
-                    eprintln!("[ghostbrew] Failed to import GPG key {} from keyserver!", key);
+                    eprintln!(
+                        "[ghostbrew] Failed to import GPG key {} from keyserver!",
+                        key
+                    );
                 }
             }
         } else {

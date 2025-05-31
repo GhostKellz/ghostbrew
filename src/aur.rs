@@ -27,16 +27,16 @@ pub fn search(query: &str) {
         let maint = result.maintainer.as_deref().unwrap_or("");
         println!(
             "[AUR] {} {} {} - {}",
-            result.name,
-            result.version,
-            maint,
-            desc
+            result.name, result.version, maint, desc
         );
     }
 }
 
 pub fn aur_search_results(query: &str) -> Vec<AurResult> {
-    let url = format!("https://aur.archlinux.org/rpc/?v=5&type=search&arg={}", query);
+    let url = format!(
+        "https://aur.archlinux.org/rpc/?v=5&type=search&arg={}",
+        query
+    );
     if let Ok(resp) = reqwest::blocking::get(&url) {
         if let Ok(json) = resp.json::<AurResponse>() {
             return json.results;
@@ -66,7 +66,9 @@ pub fn install(package: &str) {
     let tmp_dir = std::env::temp_dir().join(format!("ghostbrew-aur-{}", package));
     let _ = std::fs::remove_dir_all(&tmp_dir);
     let status = std::process::Command::new("git")
-        .arg("clone").arg(&aur_url).arg(&tmp_dir)
+        .arg("clone")
+        .arg(&aur_url)
+        .arg(&tmp_dir)
         .status();
     if !status.map(|s| s.success()).unwrap_or(false) {
         eprintln!("[ghostbrew] Failed to clone AUR repo for {}", package);
@@ -74,7 +76,8 @@ pub fn install(package: &str) {
     }
     let status = std::process::Command::new("makepkg")
         .current_dir(&tmp_dir)
-        .arg("-si").arg("--noconfirm")
+        .arg("-si")
+        .arg("--noconfirm")
         .status();
     if !status.map(|s| s.success()).unwrap_or(false) {
         eprintln!("[ghostbrew] makepkg failed for {}", package);
@@ -83,7 +86,10 @@ pub fn install(package: &str) {
 }
 
 pub fn get_pkgbuild_preview(pkg: &str) -> String {
-    let url = format!("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}", pkg);
+    let url = format!(
+        "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}",
+        pkg
+    );
     if let Ok(resp) = reqwest::blocking::get(&url) {
         if let Ok(text) = resp.text() {
             return text;
@@ -102,14 +108,24 @@ pub fn get_deps(pkg: &str) -> Vec<String> {
         if trimmed.starts_with("depends=") {
             in_dep = true;
             dep_buf.push_str(trimmed.split_once('=').map(|x| x.1).unwrap_or("").trim());
-            if trimmed.ends_with(')') { in_dep = false; }
+            if trimmed.ends_with(')') {
+                in_dep = false;
+            }
         } else if in_dep {
             dep_buf.push_str(trimmed);
-            if trimmed.ends_with(')') { in_dep = false; }
+            if trimmed.ends_with(')') {
+                in_dep = false;
+            }
         }
         if !in_dep && !dep_buf.is_empty() {
             let dep_line = dep_buf.trim_matches(&['(', ')', '"', '\'', ' '] as &[_]);
-            deps.extend(dep_line.split_whitespace().map(|s| s.trim_matches(&['"', '\'', ' '] as &[_])).filter(|s| !s.is_empty()).map(|s| s.to_string()));
+            deps.extend(
+                dep_line
+                    .split_whitespace()
+                    .map(|s| s.trim_matches(&['"', '\'', ' '] as &[_]))
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string()),
+            );
             dep_buf.clear();
         }
     }
@@ -120,7 +136,10 @@ use std::sync::mpsc;
 
 pub fn upgrade() {
     println!("[ghostbrew] Upgrading system packages...");
-    let _ = std::process::Command::new("sudo").arg("pacman").arg("-Syu").status();
+    let _ = std::process::Command::new("sudo")
+        .arg("pacman")
+        .arg("-Syu")
+        .status();
     let output = std::process::Command::new("pacman").arg("-Qm").output();
     if let Ok(out) = output {
         let pkgs = String::from_utf8_lossy(&out.stdout);
@@ -145,13 +164,17 @@ pub fn upgrade() {
 }
 
 pub fn add_tap(repo: &str) {
-    let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
+    let taps_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".local/share/ghostbrew/taps");
     let _ = std::fs::create_dir_all(&taps_dir);
     let repo_name = repo.split('/').next_back().unwrap_or(repo);
     let dest = taps_dir.join(repo_name);
     let _ = std::fs::remove_dir_all(&dest);
     let status = std::process::Command::new("git")
-        .arg("clone").arg(repo).arg(&dest)
+        .arg("clone")
+        .arg(repo)
+        .arg(&dest)
         .status();
     if !status.map(|s| s.success()).unwrap_or(false) {
         eprintln!("[ghostbrew] Failed to add tap: {}", repo);
