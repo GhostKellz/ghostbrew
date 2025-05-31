@@ -41,6 +41,10 @@ enum Commands {
     Completion {
         shell: String,
     },
+    /// Rollback a package to previous version
+    Rollback {
+        package: String,
+    },
 }
 
 fn main() {
@@ -62,6 +66,9 @@ fn main() {
         },
         Commands::Tap { repo } => aur::add_tap(repo),
         Commands::Completion { shell } => utils::completion(shell),
+        Commands::Rollback { package } => {
+            utils::rollback(package);
+        },
     }
 }
 

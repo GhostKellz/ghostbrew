@@ -3,7 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 
 pub struct BrewConfig {
+    /// Packages to ignore during upgrades (from Lua config)
     pub ignored_packages: Vec<String>,
+    /// Number of parallel jobs for install/upgrade (from Lua config)
     pub parallel: usize,
     // Add more config fields as needed
 }
@@ -29,5 +31,10 @@ impl BrewConfig {
             }
         }
         BrewConfig { ignored_packages, parallel }
+    }
+
+    /// Check if a package is ignored (used in upgrade/install logic)
+    pub fn is_ignored(&self, pkg: &str) -> bool {
+        self.ignored_packages.iter().any(|p| p == pkg)
     }
 }

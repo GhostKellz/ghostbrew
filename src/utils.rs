@@ -7,10 +7,8 @@ use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
-use diff;
-use serde_json;
 
-// Global cache for AUR/PKGBUILD data
+/// Global cache for AUR/PKGBUILD data, used for async search and PKGBUILD preview
 pub static AUR_CACHE: Lazy<Arc<Mutex<HashMap<String, aur::AurResult>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static PKGBUILD_CACHE: Lazy<Arc<Mutex<HashMap<String, String>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -44,18 +42,57 @@ pub fn pkgb_diff_audit(pkg: &str, new_pkgb: &str) {
             println!("[AUDIT][RISK] Found risky command: {}", keyword);
         }
     }
+    log_to_file(&format!("Audited PKGBUILD for {} at {}", pkg, Utc::now().to_rfc3339()));
     // TODO: Call Lua for custom audit rules
 }
 
 // Rollback to previous package versions
 pub fn rollback(pkg: &str) {
-    let history_dir = PathBuf::from(format!("$HOME/.local/share/ghostbrew/history/{}", pkg));
-    let backup_path = history_dir.join("PKGBUILD.last");
-    if backup_path.exists() {
-        println!("[ghostbrew] Rolling back {} to previous PKGBUILD version...", pkg);
-        // TODO: Actually restore previous version (rebuild/reinstall)
+    let backup_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/backups");
+    let pkg_backup = backup_dir.join(format!("{}-backup.tar.zst", pkg));
+    if !pkg_backup.exists() {
+        println!("[ghostbrew] No backup found for {}", pkg);
+        return;
+    }
+    println!("[ghostbrew] Rolling back {} from backup...", pkg);
+    let status = std::process::Command::new("sudo")
+        .arg("tar").arg("-xvf").arg(&pkg_backup)
+        .arg("-C").arg("/")
+        .status();
+    if status.map(|s| s.success()).unwrap_or(false) {
+        println!("[ghostbrew] Rollback complete for {}", pkg);
+        log_to_file(&format!("Rolled back {} at {}", pkg, Utc::now().to_rfc3339()));
     } else {
-        println!("[ghostbrew] No rollback available for {}", pkg);
+        eprintln!("[ghostbrew] Rollback failed for {}", pkg);
+    }
+}
+
+// Backup before install/upgrade
+pub fn backup_package(pkg: &str) {
+    let backup_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/backups");
+    let _ = fs::create_dir_all(&backup_dir);
+    let backup_file = backup_dir.join(format!("{}-backup.tar.zst", pkg));
+    let status = std::process::Command::new("sudo")
+        .arg("tar").arg("-cvf").arg(&backup_file)
+        .arg("/usr/bin/").arg(pkg)
+        .status();
+    if status.map(|s| s.success()).unwrap_or(false) {
+        println!("[ghostbrew] Backup complete for {}", pkg);
+        log_to_file(&format!("Backed up {} at {}", pkg, Utc::now().to_rfc3339()));
+    } else {
+        eprintln!("[ghostbrew] Backup failed for {}", pkg);
+    }
+}
+
+// Logging utility
+fn log_to_file(msg: &str) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Some(home) = dirs::home_dir() {
+        let log_path = home.join(".local/share/ghostbrew/ghostbrew.log");
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+            let _ = writeln!(file, "{}", msg);
+        }
     }
 }
 

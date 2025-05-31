@@ -30,3 +30,17 @@ pub fn upgrade() {
         Ok(_) | Err(_) => println!("[flatpak] upgrade failed."),
     }
 }
+
+pub fn print_flatpak_sandbox_info(pkg: &str) {
+    let output = Command::new("flatpak")
+        .arg("info").arg(pkg)
+        .output();
+    if let Ok(out) = output {
+        let info = String::from_utf8_lossy(&out.stdout);
+        if info.contains("sandbox: none") {
+            println!("[ghostbrew] Warning: Flatpak {} is NOT sandboxed!", pkg);
+        } else {
+            println!("[ghostbrew] Flatpak sandbox info for {}:\n{}", pkg, info);
+        }
+    }
+}

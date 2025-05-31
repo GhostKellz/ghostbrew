@@ -17,8 +17,6 @@ Inspired by `yay` and `paru`, built for modern, parallel, and auditable package 
 > 🐚 Shell completions for bash/zsh/fish  
 > 💾 Configurable via Lua 
 
-
-
 ---
 
 ## ✨ Features
@@ -30,7 +28,7 @@ Inspired by `yay` and `paru`, built for modern, parallel, and auditable package 
 * ♻️ `ghostbrew upgrade` — Sync and upgrade AUR, Chaotic-AUR, and official packages
 * 🏴 `ghostbrew tap <repo>` — Add private PKGBUILD repos
 * 🐚 `ghostbrew completion <shell>` — Shell completions (bash/zsh/fish)
-* 💪 Configurable via `~/.config/ghostbrew/config.yml`
+* 💪 Configurable via `~/.config/ghostbrew/brew.lua`
 * 🖥️ GUI frontend via GhostView (Rust, egui)
 
 ---
