@@ -7,7 +7,9 @@ pub struct AurResult {
     #[serde(rename = "Description")]
     pub description: Option<String>,
     #[serde(rename = "Maintainer")]
-    pub maintainer: Option<String>, // Maintainer is now shown in CLI/TUI output
+    pub maintainer: Option<String>,
+    #[serde(rename = "URL")]
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -18,20 +20,17 @@ pub struct AurResponse {
 use crate::utils;
 
 pub fn search(query: &str) {
-    let results = crate::core::unified_search(query);
+    let results = aur_search_results(query);
     for result in results {
-        // Print search result with description (if present)
-        let desc = result.description.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let desc = result.description.as_deref().unwrap_or("");
+        let maint = result.maintainer.as_deref().unwrap_or("");
         println!(
-            "{} {} {} - {}",
-            result.source.label(),
+            "[AUR] {} {} {} - {}",
             result.name,
             result.version,
+            maint,
             desc
         );
-        // Only show maintainer if this is an AUR result (AurResult, not SearchResult)
-        // This block is only valid if you are iterating over AurResult, not SearchResult
-        // If you want to show maintainer, use it in aur_search_results or details pane, not here
     }
 }
 
@@ -45,7 +44,6 @@ pub fn aur_search_results(query: &str) -> Vec<AurResult> {
     vec![]
 }
 
-// --- User prompt for confirmation before install ---
 fn prompt_confirm(msg: &str) -> bool {
     use std::io::{self, Write};
     print!("{} [y/N]: ", msg);
@@ -84,7 +82,6 @@ pub fn install(package: &str) {
 }
 
 pub fn get_pkgbuild_preview(pkg: &str) -> String {
-    // Fetch PKGBUILD for preview (stub, replace with real logic)
     let url = format!("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}", pkg);
     if let Ok(resp) = reqwest::blocking::get(&url) {
         if let Ok(text) = resp.text() {
@@ -94,7 +91,6 @@ pub fn get_pkgbuild_preview(pkg: &str) -> String {
     String::from("[ghostbrew] PKGBUILD not found.")
 }
 
-// --- Improved dependency parsing: handle multi-line and array syntax ---
 pub fn get_deps(pkg: &str) -> Vec<String> {
     let pkgb = get_pkgbuild_preview(pkg);
     let mut deps = Vec::new();
@@ -119,7 +115,6 @@ pub fn get_deps(pkg: &str) -> Vec<String> {
     deps
 }
 
-// --- Parallel AUR upgrades (for robustness and speed) ---
 use std::sync::mpsc;
 
 pub fn upgrade() {
@@ -136,7 +131,7 @@ pub fn upgrade() {
             if !pkg.is_empty() && !config.is_ignored(&pkg) {
                 let tx = tx.clone();
                 _count += 1;
-                utils::backup_package(&pkg); // Backup before upgrade
+                utils::backup_package(&pkg);
                 install(&pkg);
                 let _ = tx.send(pkg);
             }
@@ -149,7 +144,6 @@ pub fn upgrade() {
 }
 
 pub fn add_tap(repo: &str) {
-    // Add a custom repo by cloning to ~/.local/share/ghostbrew/taps/<repo>
     let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
     let _ = std::fs::create_dir_all(&taps_dir);
     let repo_name = repo.split('/').next_back().unwrap_or(repo);
@@ -162,5 +156,30 @@ pub fn add_tap(repo: &str) {
         eprintln!("[ghostbrew] Failed to add tap: {}", repo);
     } else {
         println!("[ghostbrew] Tap added: {}", repo);
+    }
+}
+
+pub fn remove_tap(repo: &str) {
+    let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
+    let repo_name = repo.split('/').next_back().unwrap_or(repo);
+    let dest = taps_dir.join(repo_name);
+    if dest.exists() {
+        let _ = std::fs::remove_dir_all(&dest);
+        println!("[ghostbrew] Tap removed: {}", repo);
+    } else {
+        eprintln!("[ghostbrew] Tap not found: {}", repo);
+    }
+}
+
+pub fn list_taps() {
+    let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
+    if let Ok(entries) = std::fs::read_dir(&taps_dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                println!("[ghostbrew] Tap: {}", name);
+            }
+        }
+    } else {
+        println!("[ghostbrew] No taps found.");
     }
 }
