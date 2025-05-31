@@ -3,7 +3,7 @@
 [![Arch Linux](https://img.shields.io/badge/platform-Arch%20Linux-1793d1?logo=arch-linux&logoColor=white)](https://archlinux.org)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Repo Status](https://img.shields.io/badge/status-active-success?style=flat-square)](https://github.com/ghostkellz/ghostbrew)
-[![Build](https://img.shields.io/github/actions/workflow/status/ghostkellz/ghostbrew/ci.yml?branch=main)](https://github.com/ghostkellz/ghostbrew/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/ghostkellz/ghostbrew/main.yml?branch=main)](https://github.com/ghostkellz/ghostbrew/actions)
 [![AUR](https://img.shields.io/aur/version/ghostbrew)](https://aur.archlinux.org/packages/ghostbrew)
 ![Built with Clap](https://img.shields.io/badge/built%20with-clap-orange)
 ![License](https://img.shields.io/github/license/ghostkellz/ghostbrew)
