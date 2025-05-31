@@ -10,7 +10,7 @@ pub fn run_hook(hook: &str, pkg: &str) {
         .join(".config/ghostbrew/brew.lua");
     if let Ok(script) = fs::read_to_string(&config_path) {
         let lua = Lua::new();
-        if let Ok(_) = lua.load(&script).exec() {
+        if lua.load(&script).exec().is_ok() {
             let globals = lua.globals();
             if let Ok(func) = globals.get::<_, mlua::Function>(hook) {
                 let _ = func.call::<_, ()>(pkg);
