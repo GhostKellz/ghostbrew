@@ -6,9 +6,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
 
+#[allow(dead_code)]
 /// Global cache for AUR/PKGBUILD data, used for async search and PKGBUILD preview
 pub static AUR_CACHE: Lazy<Arc<Mutex<HashMap<String, aur::AurResult>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 // Example usage: cache AUR results in async_aur_search_cached and PKGBUILD preview
+#[allow(dead_code)]
 pub static PKGBUILD_CACHE: Lazy<Arc<Mutex<HashMap<String, String>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Shared helpers (scaffold)
@@ -99,6 +101,7 @@ fn log_to_file(msg: &str) {
     }
 }
 
+#[allow(dead_code)]
 // AUR comments/votes/changelog in TUI
 pub fn aur_metadata(pkg: &str) -> (String, String, String) {
     // Fetch AUR metadata (votes, popularity, maintainer) for a package
@@ -115,6 +118,7 @@ pub fn aur_metadata(pkg: &str) -> (String, String, String) {
 }
 // Example usage: show AUR metadata in TUI/CLI details
 
+#[allow(dead_code)]
 // Flatpak/AppImage sandbox info in TUI
 pub fn flatpak_sandbox_info(pkg: &str) -> String {
     let output = std::process::Command::new("flatpak")
@@ -132,6 +136,7 @@ pub fn flatpak_sandbox_info(pkg: &str) -> String {
 }
 // Example usage: show Flatpak sandbox info in TUI/CLI details
 
+#[allow(dead_code)]
 // Async Rust for all network/disk IO (example for AUR search)
 pub fn async_aur_search(query: &str) -> Vec<aur::AurResult> {
     // Async AUR search for TUI responsiveness
@@ -146,6 +151,7 @@ pub fn async_aur_search(query: &str) -> Vec<aur::AurResult> {
 }
 // Example usage: use in TUI for async search
 
+#[allow(dead_code)]
 // Async AUR search with caching
 pub async fn async_aur_search_cached(query: &str) -> Vec<aur::AurResult> {
     // Async AUR search with caching for TUI
@@ -169,6 +175,7 @@ pub async fn async_aur_search_cached(query: &str) -> Vec<aur::AurResult> {
 }
 // Example usage: use in TUI for async search with caching
 
+#[allow(dead_code)]
 // Async PKGBUILD fetch with caching
 pub async fn async_get_pkgbuild_cached(pkg: &str) -> String {
     {
