@@ -84,6 +84,8 @@ pub fn print_search_results(results: &[SearchResult]) {
     }
 }
 
+// Example usage: call print_search_results in CLI search command
+
 pub fn install_with_priority(pkg: &str, _config: &config::BrewConfig) {
     // Load priorities from Lua config if present
     let priorities = vec![Source::Pacman, Source::Aur, Source::Flatpak];

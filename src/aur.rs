@@ -8,6 +8,7 @@ pub struct AurResult {
     pub description: Option<String>,
     #[serde(rename = "Maintainer")]
     pub maintainer: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "URL")]
     pub url: Option<String>,
 }
@@ -156,30 +157,5 @@ pub fn add_tap(repo: &str) {
         eprintln!("[ghostbrew] Failed to add tap: {}", repo);
     } else {
         println!("[ghostbrew] Tap added: {}", repo);
-    }
-}
-
-pub fn remove_tap(repo: &str) {
-    let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
-    let repo_name = repo.split('/').next_back().unwrap_or(repo);
-    let dest = taps_dir.join(repo_name);
-    if dest.exists() {
-        let _ = std::fs::remove_dir_all(&dest);
-        println!("[ghostbrew] Tap removed: {}", repo);
-    } else {
-        eprintln!("[ghostbrew] Tap not found: {}", repo);
-    }
-}
-
-pub fn list_taps() {
-    let taps_dir = dirs::home_dir().unwrap_or_default().join(".local/share/ghostbrew/taps");
-    if let Ok(entries) = std::fs::read_dir(&taps_dir) {
-        for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                println!("[ghostbrew] Tap: {}", name);
-            }
-        }
-    } else {
-        println!("[ghostbrew] No taps found.");
     }
 }

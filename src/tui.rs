@@ -25,8 +25,10 @@ impl LogPane {
     fn get(&self) -> Vec<String> {
         self.lines.lock().unwrap().clone()
     }
-    fn clear(&self) {
-        self.lines.lock().unwrap().clear();
+    /// Clear the log pane contents
+    pub fn clear(&self) {
+        let mut lines = self.lines.lock().unwrap();
+        lines.clear();
     }
 }
 
@@ -59,7 +61,7 @@ pub fn run() {
     let mut show_help = false;
     let mut show_log = false;
     let log_pane = LogPane::new();
-    let help_text = "[ghostbrew TUI]\n/ search | d details | space select | enter install | l log | h help | q quit";
+    let help_text = "[ghostbrew TUI]\n/ search | d details | space select | enter install | l log | h help | c clear log | q quit";
 
     loop {
         terminal.draw(|f| {
@@ -139,6 +141,9 @@ pub fn run() {
                     }
                     KeyCode::Char('l') => {
                         show_log = !show_log;
+                    }
+                    KeyCode::Char('c') => {
+                        log_pane.clear();
                     }
                     KeyCode::Enter => {
                         let to_install: Vec<String> = if selected_pkgs.is_empty() {

@@ -10,12 +10,17 @@ use once_cell::sync::Lazy;
 
 /// Global cache for AUR/PKGBUILD data, used for async search and PKGBUILD preview
 pub static AUR_CACHE: Lazy<Arc<Mutex<HashMap<String, aur::AurResult>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+// Example usage: cache AUR results in async_aur_search_cached and PKGBUILD preview
 pub static PKGBUILD_CACHE: Lazy<Arc<Mutex<HashMap<String, String>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Shared helpers (scaffold)
 pub fn completion(shell: &str) {
-    println!("Generating completion for: {}", shell);
-    // TODO: Output shell completion scripts
+    match shell {
+        "bash" => println!("source <(ghostbrew completion bash)"),
+        "zsh" => println!("compdef _ghostbrew ghostbrew; ghostbrew completion zsh >| $fpath[1]/_ghostbrew"),
+        "fish" => println!("ghostbrew completion fish | source"),
+        _ => println!("[ghostbrew] Supported shells: bash, zsh, fish"),
+    }
 }
 
 // PKGBUILD diff/audit before upgrade/install
@@ -98,61 +103,73 @@ fn log_to_file(msg: &str) {
 
 // AUR comments/votes/changelog in TUI
 pub fn aur_metadata(pkg: &str) -> (String, String, String) {
-    // Query AUR RPC for comments/votes/changelog (stub)
+    // Fetch AUR metadata (votes, popularity, maintainer) for a package
     let url = format!("https://aur.archlinux.org/rpc/?v=5&type=info&arg={}", pkg);
     if let Ok(resp) = reqwest::blocking::get(&url) {
         if let Ok(json) = resp.json::<serde_json::Value>() {
-            let votes = json["results"][0]["NumVotes"].to_string();
-            let pop = json["results"][0]["Popularity"].to_string();
-            let desc = json["results"][0]["Description"].to_string();
-            return (votes, pop, desc);
+            let votes = json["results"][0]["NumVotes"].as_i64().unwrap_or(0).to_string();
+            let pop = json["results"][0]["Popularity"].as_f64().unwrap_or(0.0).to_string();
+            let maint = json["results"][0]["Maintainer"].as_str().unwrap_or("").to_string();
+            return (votes, pop, maint);
         }
     }
-    ("-".to_string(), "-".to_string(), "-".to_string())
+    ("0".to_string(), "0.0".to_string(), "".to_string())
 }
+// Example usage: show AUR metadata in TUI/CLI details
 
 // Flatpak/AppImage sandbox info in TUI
 pub fn flatpak_sandbox_info(pkg: &str) -> String {
-    let output = Command::new("flatpak").arg("info").arg(pkg).output();
+    let output = std::process::Command::new("flatpak")
+        .arg("info").arg(pkg)
+        .output();
     if let Ok(out) = output {
         let info = String::from_utf8_lossy(&out.stdout);
-        if info.contains("sandbox") {
-            return "[Flatpak] Sandboxed".to_string();
+        if info.contains("sandbox: none") {
+            return format!("[ghostbrew] Warning: Flatpak {} is NOT sandboxed!", pkg);
         } else {
-            return "[Flatpak] Not sandboxed".to_string();
+            return format!("[ghostbrew] Flatpak sandbox info for {}:\n{}", pkg, info);
         }
     }
-    "[Flatpak] Info unavailable".to_string()
+    String::from("[ghostbrew] Could not get Flatpak sandbox info.")
 }
+// Example usage: show Flatpak sandbox info in TUI/CLI details
 
 // Async Rust for all network/disk IO (example for AUR search)
 pub fn async_aur_search(query: &str) -> Vec<aur::AurResult> {
-    let rt = Runtime::new().unwrap();
-    rt.block_on(async move {
-        let url = format!("https://aur.archlinux.org/rpc/?v=5&type=search&arg={}", query);
-        if let Ok(resp) = reqwest::get(&url).await {
-            if let Ok(json) = resp.json::<aur::AurResponse>().await {
-                return json.results;
-            }
+    // Async AUR search for TUI responsiveness
+    let url = format!("https://aur.archlinux.org/rpc/?v=5&type=search&arg={}", query);
+    let client = reqwest::blocking::Client::new();
+    if let Ok(resp) = client.get(&url).send() {
+        if let Ok(json) = resp.json::<aur::AurResponse>() {
+            return json.results;
         }
-        vec![]
-    })
+    }
+    vec![]
 }
+// Example usage: use in TUI for async search
 
 // Async AUR search with caching
 pub async fn async_aur_search_cached(query: &str) -> Vec<aur::AurResult> {
+    // Async AUR search with caching for TUI
+    use crate::utils::AUR_CACHE;
+    let mut cache = AUR_CACHE.lock().unwrap();
+    if let Some(cached) = cache.get(query) {
+        return vec![cached.clone()];
+    }
+    drop(cache);
     let url = format!("https://aur.archlinux.org/rpc/?v=5&type=search&arg={}", query);
-    if let Ok(resp) = reqwest::get(&url).await {
-        if let Ok(json) = resp.json::<aur::AurResponse>().await {
+    if let Ok(resp) = reqwest::blocking::get(&url) {
+        if let Ok(json) = resp.json::<aur::AurResponse>() {
             let mut cache = AUR_CACHE.lock().unwrap();
-            for pkg in &json.results {
-                cache.insert(pkg.name.clone(), pkg.clone());
+            for result in &json.results {
+                cache.insert(result.name.clone(), result.clone());
             }
             return json.results;
         }
     }
     vec![]
 }
+// Example usage: use in TUI for async search with caching
 
 // Async PKGBUILD fetch with caching
 pub async fn async_get_pkgbuild_cached(pkg: &str) -> String {

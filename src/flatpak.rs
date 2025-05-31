@@ -12,6 +12,7 @@ pub fn search(query: &str) {
         Err(e) => println!("[flatpak] search failed: {}", e),
     }
 }
+// Example usage: call flatpak::search from CLI or TUI for Flatpak search
 
 pub fn install(package: &str) {
     println!("[flatpak] Installing: {}", package);
@@ -30,6 +31,7 @@ pub fn upgrade() {
         Ok(_) | Err(_) => println!("[flatpak] upgrade failed."),
     }
 }
+// Example usage: call flatpak::upgrade from CLI or TUI for Flatpak upgrade
 
 pub fn print_flatpak_sandbox_info(pkg: &str) {
     let output = Command::new("flatpak")
@@ -44,3 +46,4 @@ pub fn print_flatpak_sandbox_info(pkg: &str) {
         }
     }
 }
+// Example usage: call print_flatpak_sandbox_info in TUI/CLI details

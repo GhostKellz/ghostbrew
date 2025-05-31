@@ -6,6 +6,7 @@ pub struct BrewConfig {
     /// Packages to ignore during upgrades (from Lua config)
     pub ignored_packages: Vec<String>,
     /// Number of parallel jobs for install/upgrade (from Lua config)
+    #[allow(dead_code)]
     pub parallel: usize,
     // Add more config fields as needed
 }
