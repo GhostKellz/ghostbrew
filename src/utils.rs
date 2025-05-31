@@ -1,9 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use chrono::Utc;
 use crate::aur;
-use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
@@ -152,7 +150,7 @@ pub fn async_aur_search(query: &str) -> Vec<aur::AurResult> {
 pub async fn async_aur_search_cached(query: &str) -> Vec<aur::AurResult> {
     // Async AUR search with caching for TUI
     use crate::utils::AUR_CACHE;
-    let mut cache = AUR_CACHE.lock().unwrap();
+    let cache = AUR_CACHE.lock().unwrap();
     if let Some(cached) = cache.get(query) {
         return vec![cached.clone()];
     }
