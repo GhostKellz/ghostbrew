@@ -1,13 +1,34 @@
 use ratatui::prelude::{Layout, Constraint, Direction};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use ratatui::style::{Style, Color};
 use crossterm::event::{self, Event, KeyCode};
 use crate::core;
-use crate::config;
-use crate::aur;
 use tokio::runtime::Runtime;
-use crate::utils::{async_aur_search_cached, async_get_pkgbuild_cached};
+use crate::utils::async_get_pkgbuild_cached;
 use mlua::Lua;
+use std::sync::{Arc, Mutex};
+
+// Log pane state
+struct LogPane {
+    lines: Arc<Mutex<Vec<String>>>,
+}
+
+impl LogPane {
+    fn new() -> Self {
+        Self { lines: Arc::new(Mutex::new(Vec::new())) }
+    }
+    fn push(&self, line: &str) {
+        let mut lines = self.lines.lock().unwrap();
+        lines.push(line.to_string());
+        if lines.len() > 1000 { lines.remove(0); }
+    }
+    fn get(&self) -> Vec<String> {
+        self.lines.lock().unwrap().clone()
+    }
+    fn clear(&self) {
+        self.lines.lock().unwrap().clear();
+    }
+}
 
 fn run_lua_hook(hook: &str, pkg: &str) {
     let config_path = dirs::home_dir()
@@ -36,11 +57,16 @@ pub fn run() {
     let mut selected_pkgs = vec![];
     let mut pkgb_preview = String::new();
     let mut show_help = false;
-    let help_text = "[ghostbrew TUI]\n/ search | d details | space select | enter install | q quit | h help";
+    let mut show_log = false;
+    let log_pane = LogPane::new();
+    let help_text = "[ghostbrew TUI]\n/ search | d details | space select | enter install | l log | h help | q quit";
 
     loop {
         terminal.draw(|f| {
             let size = f.size();
+            let chunks = Layout::default().direction(Direction::Vertical).margin(0).constraints([
+                Constraint::Min(10), Constraint::Length(7)
+            ]).split(size);
             let block = Block::default().title("ghostbrew unified search").borders(Borders::ALL);
             let items: Vec<ListItem> = results.iter().enumerate().map(|(i, r)| {
                 let color = match r.source.label() {
@@ -54,9 +80,6 @@ pub fn run() {
                 ListItem::new(format!("{}{} {} {} - {}", prefix, r.source.label(), r.name, r.version, r.description)).style(style)
             }).collect();
             let list = List::new(items).block(block).highlight_symbol("▶ ");
-            let chunks = Layout::default().direction(Direction::Vertical).margin(0).constraints([
-                Constraint::Min(10), Constraint::Length(7)
-            ]).split(size);
             f.render_widget(list, chunks[0]);
             let mut details = String::new();
             if show_details {
@@ -70,9 +93,12 @@ pub fn run() {
                     }
                 }
             }
+            let log_lines = log_pane.get().join("\n");
             let status_p = Paragraph::new(
-                if show_help { help_text.into() } else { status.clone() + "\n" + &details }
-            ).block(Block::default().borders(Borders::ALL).title("Status/Details"));
+                if show_help { help_text.into() }
+                else if show_log { log_lines }
+                else { status.clone() + "\n" + &details }
+            ).block(Block::default().borders(Borders::ALL).title(if show_log { "Log" } else { "Status/Details" }));
             f.render_widget(status_p, chunks[1]);
         }).unwrap();
 
@@ -111,6 +137,9 @@ pub fn run() {
                     KeyCode::Char('h') => {
                         show_help = !show_help;
                     }
+                    KeyCode::Char('l') => {
+                        show_log = !show_log;
+                    }
                     KeyCode::Enter => {
                         let to_install: Vec<String> = if selected_pkgs.is_empty() {
                             results.get(selected).map(|p| p.name.clone()).into_iter().collect()
@@ -120,9 +149,12 @@ pub fn run() {
                         for pkg in &to_install {
                             run_lua_hook("pre_install", pkg);
                             status = format!("Installing {}...", pkg);
+                            log_pane.push(&status);
                             core::install_with_priority(pkg, &config);
                             run_lua_hook("post_install", pkg);
-                            status = format!("[ghostbrew] {} install complete.", pkg);
+                            let done = format!("[ghostbrew] {} install complete.", pkg);
+                            log_pane.push(&done);
+                            status = done;
                         }
                         selected_pkgs.clear();
                     }
