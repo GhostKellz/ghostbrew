@@ -7,15 +7,19 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/ghostkellz/ghostbrew"
 license=('MIT')
 depends=('git')
-makedepends=('rust' 'cargo' 'base-devel')
+makedepends=('rust' 'cargo' 'clang' 'llvm' 'gcc' 'base-devel')
 provides=('ghostbrew')
 conflicts=('ghostbrew')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ghostkellz/ghostbrew/archive/refs/tags/v$pkgver.tar.gz")
 b2sums=('SKIP')
 
+prepare() {
+  cd "$srcdir/$pkgname-$pkgver"
+  export RUSTFLAGS="-C target-feature=-crt-static"
+}
+
 build() {
   cd "$srcdir/$pkgname-$pkgver"
-  cargo clean
   cargo build --release --locked
 }
 
