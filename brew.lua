@@ -1,6 +1,6 @@
 -- Example ghostbrew Lua config
 ignored_packages = { "linux", "nvidia" }
-parallel = 4
+parallel = 20
 priorities = { "chaotic-aur", "aur", "pacman", "flatpak" }
 
 function pre_install(pkg)

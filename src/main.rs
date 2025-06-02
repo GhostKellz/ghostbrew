@@ -39,6 +39,10 @@ enum Commands {
     Completion { shell: String },
     /// Rollback a package to previous version
     Rollback { package: String },
+    /// Rollback PKGBUILD to previous version
+    RollbackPkgb { package: String },
+    /// Set the GPG keyserver
+    SetKeyserver { keyserver: String },
     /// Flatpak search
     FlatpakSearch { query: String },
     /// Flatpak upgrade
@@ -89,6 +93,12 @@ fn main() {
         Commands::Completion { shell } => utils::completion(shell),
         Commands::Rollback { package } => {
             utils::rollback(package);
+        }
+        Commands::RollbackPkgb { package } => {
+            utils::cli_rollback_pkgbuild(package);
+        }
+        Commands::SetKeyserver { keyserver } => {
+            utils::cli_set_keyserver(keyserver);
         }
         Commands::FlatpakSearch { query } => {
             flatpak::search(query);

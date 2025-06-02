@@ -39,3 +39,21 @@ pub fn check_key(key: &str) {
         }
     }
 }
+
+/// Set a custom GPG keyserver
+pub fn set_keyserver(keyserver: &str) {
+    println!("[ghostbrew] Setting GPG keyserver to: {}", keyserver);
+    let status = std::process::Command::new("gpg")
+        .arg("--keyserver")
+        .arg(keyserver)
+        .status();
+    if let Ok(s) = status {
+        if s.success() {
+            println!("[ghostbrew] Successfully set keyserver to {}.", keyserver);
+        } else {
+            eprintln!("[ghostbrew] Failed to set keyserver to {}.", keyserver);
+        }
+    } else {
+        eprintln!("[ghostbrew] Error occurred while setting keyserver to {}.", keyserver);
+    }
+}

@@ -1,4 +1,5 @@
 use crate::aur;
+use crate::gpg;
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -90,6 +91,36 @@ pub fn rollback(pkg: &str) {
     } else {
         eprintln!("[ghostbrew] Rollback failed for {}", pkg);
     }
+}
+
+// Rollback PKGBUILD to previous version
+pub fn rollback_pkgbuild(pkg: &str) {
+    let history_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".local/share/ghostbrew/history/")
+        .join(pkg);
+    let last_pkgb_path = history_dir.join("PKGBUILD.last");
+    let backup_pkgb_path = history_dir.join("PKGBUILD.backup");
+
+    if !backup_pkgb_path.exists() {
+        println!("[ghostbrew] No backup PKGBUILD found for {}.", pkg);
+        return;
+    }
+
+    if let Err(e) = std::fs::copy(&backup_pkgb_path, &last_pkgb_path) {
+        eprintln!("[ghostbrew] Failed to rollback PKGBUILD for {}: {}", pkg, e);
+    } else {
+        println!("[ghostbrew] Successfully rolled back PKGBUILD for {}.", pkg);
+    }
+}
+
+// Example CLI usage for rollback_pkgbuild and set_keyserver
+pub fn cli_rollback_pkgbuild(pkg: &str) {
+    rollback_pkgbuild(pkg);
+}
+
+pub fn cli_set_keyserver(keyserver: &str) {
+    gpg::set_keyserver(keyserver);
 }
 
 // Backup before install/upgrade
