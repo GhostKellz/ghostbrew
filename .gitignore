@@ -25,6 +25,7 @@ Cargo.lock
 # Build helpers
 *.tar.gz
 *.pkg.tar.zst
+pkg/
 
 # Go legacy (if needed)
 /archive/go-v0.1/bin/
