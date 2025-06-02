@@ -1,67 +1,68 @@
 # 👻 ghostbrew
 
 [![Arch Linux](https://img.shields.io/badge/platform-Arch%20Linux-1793d1?logo=arch-linux&logoColor=white)](https://archlinux.org)
-[![Made with Go](https://img.shields.io/badge/made%20with-Go-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![Made with Rust](https://img.shields.io/badge/made%20with-Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Repo Status](https://img.shields.io/badge/status-active-success?style=flat-square)](https://github.com/ghostkellz/ghostbrew)
 
 ---
 
-**ghostbrew** is a fast, minimal, and security-focused AUR helper for Arch Linux.
-Inspired by `yay` and `paru`, but designed for modern, parallel, and auditable package management.
+**ghostbrew** is a fast, minimal, and security-focused AUR helper for Arch Linux, written in Rust.
+Inspired by `yay` and `paru`, but designed for modern, parallel, and auditable package management with a native TUI and Lua config.
 
-> 🧪 Interactive AUR search & install (fzf-style)
+> 🧪 Interactive AUR, Pacman, and Flatpak search & install (Rust TUI)
 > ⚡ Parallel, dependency-aware builds
 > 🔒 PKGBUILD security audit before install
-> 🔑 GPG key check & (soon) auto-import
+> 🔑 GPG key check & auto-import
 > 🏴 Private repo/tap support
 > 🐚 Shell completions for bash/zsh/fish
-> 💾 Configurable via YAML
+> 💾 Configurable via Lua
 
 ---
 
 ## ✨ Features
 
-* 🔍 `ghostbrew search <pkg>` — Interactive AUR search & install
+* 🔍 `ghostbrew search <pkg>` — Unified AUR/Pacman/Flatpak search & install
 * 📦 Parallel install with dependency resolution
 * 🕵️ PKGBUILD inspector: highlights risky commands before build
-* 🔑 GPG key check (auto-import coming soon)
+* 🔑 GPG key check and auto-import
 * ♻️ `ghostbrew upgrade` — Sync official, Chaotic-AUR, and AUR packages
 * 🏴 `ghostbrew tap <repo>` — Add private PKGBUILD repos
 * 🐚 `ghostbrew completion <shell>` — Shell completions
-* 💪 Configurable via `~/.config/ghostbrew/config.yml`
+* 💪 Configurable via `~/.config/ghostbrew/brew.lua`
+* 🖥️ Native TUI (ratatui/crossterm)
 
 ---
 
 ## 🚀 Getting Started
 
 ```bash
-git clone git@github.com:ghostkellz/ghostbrew.git
+git clone https://github.com/ghostkellz/ghostbrew.git
 cd ghostbrew
-go build -o ghostbrew
-./ghostbrew --help
+makepkg -si
 ```
 
 ### 🔧 Requirements
 
 * Arch Linux / Arch-based distro
-* `git`, `go`, `makepkg`, `sudo`
+* `git`, `rust`, `cargo`, `makepkg`, `sudo`
 * Internet (for AUR access)
 
 ---
 
 ## 🔮 Roadmap
 
-* [x] Interactive AUR search (promptui)
+* [x] Interactive AUR search (Rust TUI)
 * [x] Parallel, dependency-aware builds
 * [x] PKGBUILD security audit
 * [x] Shell completions
-* [x] Config file support
+* [x] Lua config file support
 * [x] Tap/private repo support
-* [ ] GPG key auto-import
+* [x] GPG key auto-import
+* [x] Flatpak integration
 * [ ] Advanced upgrade logic (AUR + official)
-* [ ] TUI support via Bubbletea
 * [ ] Self-updating via GhostCTL
 * [ ] Plugin/hook system
+* [ ] GUI frontend
 
 ---
 
@@ -69,19 +70,18 @@ go build -o ghostbrew
 
 ```
 ghostbrew/
-├── cmd/            # CLI commands (search, install, upgrade, tap, etc)
-├── internal/       # AUR, git, makepkg helpers
-├── config/         # YAML config parser
-├── main.go
+├── src/            # Rust source code (core, tui, aur, pacman, etc)
+├── brew.lua        # Example Lua config
+├── PKGBUILD        # Arch packaging
 ├── README.md
-└── go.mod
+├── Cargo.toml
 ```
 
 ---
 
 ## 🧙‍♂️ Philosophy
 
-GhostBrew isn’t just another AUR helper — it's a haunted tool built for speed, security, and extensibility. Minimal, inspectable, and ready for dev-ops and mesh-native environments.
+Ghostbrew isn’t just another AUR helper — it's a haunted tool built for speed, security, and extensibility. Minimal, inspectable, and ready for dev-ops and mesh-native environments.
 
 ---
 
