@@ -15,12 +15,14 @@ b2sums=('SKIP')
 
 prepare() {
   cd "$srcdir/$pkgname-$pkgver"
-  export RUSTFLAGS="-C target-feature=-crt-static"
+  cargo clean
 }
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
-  cargo build --release --locked
+  export RUSTFLAGS="-C target-cpu=native"
+  export CARGO_PROFILE_RELEASE_LTO=false
+  cargo build --release
 }
 
 package() {
