@@ -54,6 +54,9 @@ pub fn set_keyserver(keyserver: &str) {
             eprintln!("[ghostbrew] Failed to set keyserver to {}.", keyserver);
         }
     } else {
-        eprintln!("[ghostbrew] Error occurred while setting keyserver to {}.", keyserver);
+        eprintln!(
+            "[ghostbrew] Error occurred while setting keyserver to {}.",
+            keyserver
+        );
     }
 }
