@@ -6,6 +6,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/ghostkellz/ghostbrew/main.yml?branch=main)](https://github.com/ghostkellz/ghostbrew/actions)
 ![Built with Clap](https://img.shields.io/badge/built%20with-clap-orange)
 ![License](https://img.shields.io/github/license/ghostkellz/ghostbrew)
+
 ---
 
 ## Overview
