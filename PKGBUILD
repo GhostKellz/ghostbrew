@@ -24,6 +24,7 @@ prepare() {
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
+  cargo clean
   cargo build --release
 }
 
