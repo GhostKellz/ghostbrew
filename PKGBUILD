@@ -15,13 +15,15 @@ b2sums=('SKIP')
 
 prepare() {
   cd "$srcdir/$pkgname-$pkgver"
+  if [[ ! -f Cargo.lock ]]; then
+    echo "ERROR: Cargo.lock is missing from the source tarball!" >&2
+    exit 1
+  fi
   cargo clean
 }
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
-  export RUSTFLAGS="-C target-cpu=native"
-  export CARGO_PROFILE_RELEASE_LTO=false
   cargo build --release
 }
 
