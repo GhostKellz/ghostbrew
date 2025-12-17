@@ -39,9 +39,10 @@ pub fn detect_prefcore(nr_cpus: u32) -> Result<PrefcoreInfo> {
     // Check if prefcore is enabled
     let prefcore_path = "/sys/devices/system/cpu/amd_pstate/prefcore";
     if Path::new(prefcore_path).exists()
-        && let Ok(content) = fs::read_to_string(prefcore_path) {
-            info.enabled = content.trim() == "enabled";
-        }
+        && let Ok(content) = fs::read_to_string(prefcore_path)
+    {
+        info.enabled = content.trim() == "enabled";
+    }
 
     if !info.enabled {
         debug!("AMD prefcore not enabled");
@@ -58,12 +59,13 @@ pub fn detect_prefcore(nr_cpus: u32) -> Result<PrefcoreInfo> {
         );
 
         if let Ok(content) = fs::read_to_string(&ranking_path)
-            && let Ok(ranking) = content.trim().parse::<u32>() {
-                info.rankings[cpu as usize] = ranking;
-                if ranking > info.max_ranking {
-                    info.max_ranking = ranking;
-                }
+            && let Ok(ranking) = content.trim().parse::<u32>()
+        {
+            info.rankings[cpu as usize] = ranking;
+            if ranking > info.max_ranking {
+                info.max_ranking = ranking;
             }
+        }
     }
 
     // Find CPUs with the highest ranking
@@ -75,13 +77,18 @@ pub fn detect_prefcore(nr_cpus: u32) -> Result<PrefcoreInfo> {
 
     // Log summary
     if !info.preferred_cpus.is_empty() {
-        info!("Prefcore: max ranking {} on CPUs {:?}",
-              info.max_ranking, info.preferred_cpus);
+        info!(
+            "Prefcore: max ranking {} on CPUs {:?}",
+            info.max_ranking, info.preferred_cpus
+        );
     }
 
     // Log per-CCD rankings if debug enabled
     for cpu in 0..nr_cpus {
-        debug!("CPU {}: prefcore ranking {}", cpu, info.rankings[cpu as usize]);
+        debug!(
+            "CPU {}: prefcore ranking {}",
+            cpu, info.rankings[cpu as usize]
+        );
     }
 
     Ok(info)
@@ -104,8 +111,7 @@ pub fn set_cpu_epp(cpu: u32, epp: &str) -> Result<()> {
         "/sys/devices/system/cpu/cpufreq/policy{}/energy_performance_preference",
         cpu
     );
-    fs::write(&path, epp)
-        .with_context(|| format!("Failed to set EPP {} for CPU {}", epp, cpu))
+    fs::write(&path, epp).with_context(|| format!("Failed to set EPP {} for CPU {}", epp, cpu))
 }
 
 /// Get available EPP values for a CPU
@@ -124,9 +130,9 @@ pub fn get_available_epps(cpu: u32) -> Result<Vec<String>> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub enum PstateMode {
-    Active,      // amd-pstate-epp
-    Passive,     // amd-pstate
-    Guided,      // amd-pstate with guided autonomous mode
+    Active,  // amd-pstate-epp
+    Passive, // amd-pstate
+    Guided,  // amd-pstate with guided autonomous mode
     Unknown,
 }
 
@@ -146,9 +152,10 @@ pub fn detect_pstate_mode() -> PstateMode {
         // Check if amd_pstate is even loaded
         let driver_path = "/sys/devices/system/cpu/cpufreq/policy0/scaling_driver";
         if let Ok(driver) = fs::read_to_string(driver_path)
-            && driver.trim().starts_with("amd") {
-                return PstateMode::Unknown;
-            }
+            && driver.trim().starts_with("amd")
+        {
+            return PstateMode::Unknown;
+        }
         PstateMode::Unknown
     }
 }
@@ -188,9 +195,10 @@ impl EppManager {
 
         // Check if already set
         if let Some(current) = &self.current_epp[cpu_idx]
-            && current == epp {
-                return Ok(());
-            }
+            && current == epp
+        {
+            return Ok(());
+        }
 
         set_cpu_epp(cpu, epp)?;
         self.current_epp[cpu_idx] = Some(epp.to_string());
@@ -208,9 +216,10 @@ impl EppManager {
 
         for (cpu, original) in self.original_epp.iter().enumerate() {
             if let Some(epp) = original
-                && let Err(e) = set_cpu_epp(cpu as u32, epp) {
-                    warn!("Failed to restore EPP for CPU {}: {}", cpu, e);
-                }
+                && let Err(e) = set_cpu_epp(cpu as u32, epp)
+            {
+                warn!("Failed to restore EPP for CPU {}: {}", cpu, e);
+            }
         }
 
         info!("Restored original EPP values");

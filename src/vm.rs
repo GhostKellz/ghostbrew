@@ -14,10 +14,10 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub enum VmWorkloadType {
-    Dev,      // Development VM - batch priority
-    Gaming,   // Gaming VM with GPU passthrough - gaming priority
-    Ai,       // AI/ML VM with GPU - batch priority, GPU affinity
-    Unknown,  // Unclassified VM
+    Dev,     // Development VM - batch priority
+    Gaming,  // Gaming VM with GPU passthrough - gaming priority
+    Ai,      // AI/ML VM with GPU - batch priority, GPU affinity
+    Unknown, // Unclassified VM
 }
 
 impl std::fmt::Display for VmWorkloadType {
@@ -55,9 +55,9 @@ pub struct VmInfo {
 #[derive(Debug)]
 pub struct IommuGroup {
     pub id: u32,
-    pub devices: Vec<String>,  // PCI addresses
+    pub devices: Vec<String>, // PCI addresses
     pub has_gpu: bool,
-    pub is_isolated: bool,     // Good grouping (no other devices)
+    pub is_isolated: bool, // Good grouping (no other devices)
 }
 
 /// Detect all IOMMU groups on the system
@@ -87,9 +87,10 @@ pub fn detect_iommu_groups() -> Result<Vec<IommuGroup>> {
                     // Check if this is a GPU (class 0x03xxxx)
                     let class_path = dev_entry.path().join("class");
                     if let Ok(class) = fs::read_to_string(&class_path)
-                        && class.trim().starts_with("0x03") {
-                            has_gpu = true;
-                        }
+                        && class.trim().starts_with("0x03")
+                    {
+                        has_gpu = true;
+                    }
 
                     devices.push(pci_addr);
                 }
@@ -112,11 +113,18 @@ pub fn detect_iommu_groups() -> Result<Vec<IommuGroup>> {
 
     let gpu_groups: Vec<_> = groups.iter().filter(|g| g.has_gpu).collect();
     if !gpu_groups.is_empty() {
-        info!("IOMMU: {} groups, {} with GPU", groups.len(), gpu_groups.len());
+        info!(
+            "IOMMU: {} groups, {} with GPU",
+            groups.len(),
+            gpu_groups.len()
+        );
         for g in &gpu_groups {
-            debug!("  Group {}: {:?} ({})",
-                   g.id, g.devices,
-                   if g.is_isolated { "isolated" } else { "shared" });
+            debug!(
+                "  Group {}: {:?} ({})",
+                g.id,
+                g.devices,
+                if g.is_isolated { "isolated" } else { "shared" }
+            );
         }
     }
 
@@ -128,9 +136,10 @@ pub fn is_vfio_bound(pci_addr: &str) -> bool {
     let driver_path = format!("/sys/bus/pci/devices/{}/driver", pci_addr);
 
     if let Ok(driver_link) = fs::read_link(&driver_path)
-        && let Some(driver_name) = driver_link.file_name() {
-            return driver_name.to_string_lossy().contains("vfio");
-        }
+        && let Some(driver_name) = driver_link.file_name()
+    {
+        return driver_name.to_string_lossy().contains("vfio");
+    }
 
     false
 }
@@ -146,9 +155,10 @@ pub fn get_passthrough_gpus(iommu_groups: &[IommuGroup]) -> Vec<String> {
                     // Check if it's actually a GPU
                     let class_path = format!("/sys/bus/pci/devices/{}/class", device);
                     if let Ok(class) = fs::read_to_string(&class_path)
-                        && class.trim().starts_with("0x03") {
-                            passthrough.push(device.clone());
-                        }
+                        && class.trim().starts_with("0x03")
+                    {
+                        passthrough.push(device.clone());
+                    }
                 }
             }
         }
@@ -213,8 +223,14 @@ fn check_qemu_process(pid: u32) -> Option<VmInfo> {
     // Classify workload type
     let workload_type = classify_vm_workload(&args, &name, has_gpu_passthrough);
 
-    debug!("Detected VM: {} (PID {}) - {} vCPUs, type: {}, GPU: {}",
-           name, pid, vcpu_pids.len(), workload_type, has_gpu_passthrough);
+    debug!(
+        "Detected VM: {} (PID {}) - {} vCPUs, type: {}, GPU: {}",
+        name,
+        pid,
+        vcpu_pids.len(),
+        workload_type,
+        has_gpu_passthrough
+    );
 
     Some(VmInfo {
         qemu_pid: pid,
@@ -232,12 +248,13 @@ fn extract_vm_name(args: &[&str]) -> String {
     // Try -name argument
     for (i, arg) in args.iter().enumerate() {
         if *arg == "-name"
-            && let Some(name) = args.get(i + 1) {
-                // Handle "guest=name,..." format
-                let name = name.split(',').next().unwrap_or(name);
-                let name = name.strip_prefix("guest=").unwrap_or(name);
-                return name.to_string();
-            }
+            && let Some(name) = args.get(i + 1)
+        {
+            // Handle "guest=name,..." format
+            let name = name.split(',').next().unwrap_or(name);
+            let name = name.strip_prefix("guest=").unwrap_or(name);
+            return name.to_string();
+        }
     }
 
     // Try to extract from -uuid or use generic name
@@ -294,10 +311,12 @@ fn check_vcpu_pinning(qemu_pid: u32, vcpu_pids: &[u32]) -> bool {
     // Also check libvirt cgroup for pinning
     let cgroup_path = format!("/proc/{}/cgroup", qemu_pid);
     if let Ok(cgroup) = fs::read_to_string(&cgroup_path)
-        && cgroup.contains("vcpu") && cgroup.contains("emulator") {
-            // Libvirt-style cgroups often indicate pinning
-            return true;
-        }
+        && cgroup.contains("vcpu")
+        && cgroup.contains("emulator")
+    {
+        // Libvirt-style cgroups often indicate pinning
+        return true;
+    }
 
     false
 }
@@ -310,21 +329,22 @@ fn detect_vm_passthrough_gpus(args: &[&str]) -> Vec<String> {
         // Look for vfio-pci device arguments
         if *arg == "-device"
             && let Some(device_arg) = args.get(i + 1)
-                && device_arg.contains("vfio-pci") {
-                    // Extract host= PCI address
-                    for part in device_arg.split(',') {
-                        if part.starts_with("host=") {
-                            let addr = part.strip_prefix("host=").unwrap_or("");
-                            // Normalize to full PCI address format
-                            let addr = if addr.contains(':') && !addr.starts_with("0000:") {
-                                format!("0000:{}", addr)
-                            } else {
-                                addr.to_string()
-                            };
-                            gpus.push(addr);
-                        }
-                    }
+            && device_arg.contains("vfio-pci")
+        {
+            // Extract host= PCI address
+            for part in device_arg.split(',') {
+                if part.starts_with("host=") {
+                    let addr = part.strip_prefix("host=").unwrap_or("");
+                    // Normalize to full PCI address format
+                    let addr = if addr.contains(':') && !addr.starts_with("0000:") {
+                        format!("0000:{}", addr)
+                    } else {
+                        addr.to_string()
+                    };
+                    gpus.push(addr);
                 }
+            }
+        }
     }
 
     gpus
@@ -336,16 +356,22 @@ fn classify_vm_workload(args: &[&str], name: &str, has_gpu: bool) -> VmWorkloadT
     let args_str = args.join(" ").to_lowercase();
 
     // Gaming VM indicators
-    if (name_lower.contains("gaming") || name_lower.contains("windows") ||
-       name_lower.contains("game"))
-        && has_gpu {
-            return VmWorkloadType::Gaming;
-        }
+    if (name_lower.contains("gaming")
+        || name_lower.contains("windows")
+        || name_lower.contains("game"))
+        && has_gpu
+    {
+        return VmWorkloadType::Gaming;
+    }
 
     // AI/ML VM indicators
-    if name_lower.contains("ollama") || name_lower.contains("ai") ||
-       name_lower.contains("ml") || name_lower.contains("cuda") ||
-       name_lower.contains("pytorch") || name_lower.contains("tensorflow") {
+    if name_lower.contains("ollama")
+        || name_lower.contains("ai")
+        || name_lower.contains("ml")
+        || name_lower.contains("cuda")
+        || name_lower.contains("pytorch")
+        || name_lower.contains("tensorflow")
+    {
         return VmWorkloadType::Ai;
     }
 
@@ -355,10 +381,15 @@ fn classify_vm_workload(args: &[&str], name: &str, has_gpu: bool) -> VmWorkloadT
     }
 
     // Dev VM indicators
-    if name_lower.contains("dev") || name_lower.contains("build") ||
-       name_lower.contains("test") || name_lower.contains("linux") ||
-       name_lower.contains("ubuntu") || name_lower.contains("fedora") ||
-       name_lower.contains("arch") || name_lower.contains("debian") {
+    if name_lower.contains("dev")
+        || name_lower.contains("build")
+        || name_lower.contains("test")
+        || name_lower.contains("linux")
+        || name_lower.contains("ubuntu")
+        || name_lower.contains("fedora")
+        || name_lower.contains("arch")
+        || name_lower.contains("debian")
+    {
         return VmWorkloadType::Dev;
     }
 
@@ -386,10 +417,13 @@ impl VmMonitor {
         if !vms.is_empty() {
             info!("VMs: {} detected", vms.len());
             for vm in &vms {
-                info!("  {} ({}): {} vCPUs, GPU: {}",
-                      vm.name, vm.workload_type,
-                      vm.vcpu_pids.len(),
-                      vm.has_gpu_passthrough);
+                info!(
+                    "  {} ({}): {} vCPUs, GPU: {}",
+                    vm.name,
+                    vm.workload_type,
+                    vm.vcpu_pids.len(),
+                    vm.has_gpu_passthrough
+                );
             }
         }
 
@@ -412,7 +446,8 @@ impl VmMonitor {
         let old_pids: HashSet<u32> = self.vms.iter().map(|v| v.qemu_pid).collect();
 
         // Find new VMs
-        let new_vms: Vec<VmInfo> = current_vms.into_iter()
+        let new_vms: Vec<VmInfo> = current_vms
+            .into_iter()
             .filter(|v| !old_pids.contains(&v.qemu_pid))
             .collect();
 
@@ -443,7 +478,8 @@ impl VmMonitor {
 
     /// Get gaming VM vCPU count
     pub fn gaming_vcpu_count(&self) -> usize {
-        self.vms.iter()
+        self.vms
+            .iter()
             .filter(|v| v.workload_type == VmWorkloadType::Gaming)
             .map(|v| v.vcpu_pids.len())
             .sum()
@@ -451,7 +487,8 @@ impl VmMonitor {
 
     /// Get dev VM vCPU count
     pub fn dev_vcpu_count(&self) -> usize {
-        self.vms.iter()
+        self.vms
+            .iter()
             .filter(|v| v.workload_type == VmWorkloadType::Dev)
             .map(|v| v.vcpu_pids.len())
             .sum()
@@ -470,9 +507,7 @@ impl VmMonitor {
 
     /// Get IOMMU summary
     pub fn iommu_summary(&self) -> String {
-        let gpu_groups: Vec<_> = self.iommu_groups.iter()
-            .filter(|g| g.has_gpu)
-            .collect();
+        let gpu_groups: Vec<_> = self.iommu_groups.iter().filter(|g| g.has_gpu).collect();
 
         if gpu_groups.is_empty() {
             return "no GPU groups".to_string();

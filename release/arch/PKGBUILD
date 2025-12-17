@@ -1,0 +1,64 @@
+# Maintainer: ghostkellz <ckelley@ghostkellz.sh>
+# GhostBrew - sched-ext BPF scheduler for AMD Zen5/X3D
+
+pkgname=scx-ghostbrew
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="sched-ext BPF scheduler optimized for AMD Zen5/X3D processors"
+arch=('x86_64')
+url="https://github.com/ghostkellz/ghostbrew"
+license=('MIT')
+depends=(
+  'libbpf'
+)
+makedepends=(
+  'rust'
+  'cargo'
+  'clang'
+  'llvm'
+  'bpf-linker'
+  'git'
+)
+optdepends=(
+  'linux-ghost: Recommended kernel with sched-ext support'
+  'linux-cachyos: Alternative kernel with sched-ext support'
+)
+provides=('scx_ghostbrew')
+conflicts=('scx_ghostbrew')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+# For git builds (development)
+# source=("git+${url}.git")
+# sha256sums=('SKIP')
+
+build() {
+  cd "ghostbrew-${pkgver}"
+
+  export RUSTFLAGS="-C target-cpu=native"
+  cargo build --release
+}
+
+check() {
+  cd "ghostbrew-${pkgver}"
+  cargo test --release
+}
+
+package() {
+  cd "ghostbrew-${pkgver}"
+
+  # Binary
+  install -Dm755 "target/release/scx_ghostbrew" "${pkgdir}/usr/bin/scx_ghostbrew"
+
+  # Systemd service
+  install -Dm644 "scx-ghostbrew.service" "${pkgdir}/usr/lib/systemd/system/scx-ghostbrew.service"
+
+  # Documentation
+  install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 "docs/ARCHITECTURE.md" "${pkgdir}/usr/share/doc/${pkgname}/ARCHITECTURE.md"
+  install -Dm644 "docs/TUNING.md" "${pkgdir}/usr/share/doc/${pkgname}/TUNING.md"
+  install -Dm644 "docs/CHANGELOG.md" "${pkgdir}/usr/share/doc/${pkgname}/CHANGELOG.md"
+
+  # License
+  install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

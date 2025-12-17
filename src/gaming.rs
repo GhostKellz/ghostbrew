@@ -37,19 +37,11 @@ const GAMING_ENV_VARS: &[&str] = &[
 
 /// AI/ML process patterns
 const AI_EXE_PATTERNS: &[&str] = &[
-    "ollama",
-    "llama",
-    "pytorch",
-    "python",  // Many AI workloads run under python
+    "ollama", "llama", "pytorch", "python", // Many AI workloads run under python
 ];
 
 /// AI-related environment variables
-const AI_ENV_VARS: &[&str] = &[
-    "OLLAMA_",
-    "CUDA_VISIBLE_DEVICES",
-    "PYTORCH_",
-    "TF_",
-];
+const AI_ENV_VARS: &[&str] = &["OLLAMA_", "CUDA_VISIBLE_DEVICES", "PYTORCH_", "TF_"];
 
 /// Scan /proc for gaming and AI processes
 /// Returns a map of PID -> workload class
@@ -211,8 +203,12 @@ impl GamingDetector {
 
         for (pid, class) in &current_scan {
             match *class {
-                WORKLOAD_GAMING => { current_gaming.insert(*pid); }
-                WORKLOAD_AI => { current_ai.insert(*pid); }
+                WORKLOAD_GAMING => {
+                    current_gaming.insert(*pid);
+                }
+                WORKLOAD_AI => {
+                    current_ai.insert(*pid);
+                }
                 _ => {}
             }
         }
@@ -240,8 +236,11 @@ impl GamingDetector {
         self.known_ai_pids = current_ai;
 
         if !new_pids.is_empty() || !removed_pids.is_empty() {
-            info!("Gaming detector: {} new, {} removed",
-                  new_pids.len(), removed_pids.len());
+            info!(
+                "Gaming detector: {} new, {} removed",
+                new_pids.len(),
+                removed_pids.len()
+            );
         }
 
         Ok((new_pids, removed_pids))

@@ -19,10 +19,10 @@ use std::path::Path;
 /// Container workload classification
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ContainerWorkloadType {
-    Ai,       // AI/ML workload (Ollama, PyTorch, etc.) - batch priority, GPU affinity
-    Gaming,   // Gaming container (rare but possible) - gaming priority
-    Compute,  // GPU compute workload - batch priority
-    General,  // General container - batch priority
+    Ai,      // AI/ML workload (Ollama, PyTorch, etc.) - batch priority, GPU affinity
+    Gaming,  // Gaming container (rare but possible) - gaming priority
+    Compute, // GPU compute workload - batch priority
+    General, // General container - batch priority
 }
 
 impl std::fmt::Display for ContainerWorkloadType {
@@ -74,21 +74,10 @@ const AI_PATTERNS: &[&str] = &[
 ];
 
 /// Gaming patterns (for containerized gaming - rare)
-const GAMING_PATTERNS: &[&str] = &[
-    "steam",
-    "proton",
-    "wine",
-    "gamescope",
-];
+const GAMING_PATTERNS: &[&str] = &["steam", "proton", "wine", "gamescope"];
 
 /// GPU compute patterns
-const COMPUTE_PATTERNS: &[&str] = &[
-    "nvidia-smi",
-    "cuda-",
-    "nvcc",
-    "nccl",
-    "cudnn",
-];
+const COMPUTE_PATTERNS: &[&str] = &["nvidia-smi", "cuda-", "nvcc", "nccl", "cudnn"];
 
 /// Detect if NVIDIA Container Runtime is available
 pub fn nvidia_runtime_available() -> bool {
@@ -124,7 +113,8 @@ fn scan_cgroup_dir(dir: &Path, containers: &mut Vec<ContainerInfo>) -> Result<()
         return Ok(());
     }
 
-    let dir_name = dir.file_name()
+    let dir_name = dir
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
@@ -181,7 +171,8 @@ fn is_container_cgroup(name: &str) -> bool {
 
 /// Parse a container cgroup and extract info
 fn parse_container_cgroup(cgroup_path: &Path) -> Result<Option<ContainerInfo>> {
-    let cgroup_name = cgroup_path.file_name()
+    let cgroup_name = cgroup_path
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
@@ -213,7 +204,8 @@ fn parse_container_cgroup(cgroup_path: &Path) -> Result<Option<ContainerInfo>> {
         "containerd"
     } else {
         "unknown"
-    }.to_string();
+    }
+    .to_string();
 
     // Classify workload and check for GPU
     let (workload_type, has_gpu) = classify_container_workload(&pids, cgroup_path);
@@ -221,8 +213,13 @@ fn parse_container_cgroup(cgroup_path: &Path) -> Result<Option<ContainerInfo>> {
     // Try to get container name (from Docker/Podman)
     let name = get_container_name(&id, &runtime);
 
-    debug!("Container {}: {} PIDs, type: {}, GPU: {}",
-           id, pids.len(), workload_type, has_gpu);
+    debug!(
+        "Container {}: {} PIDs, type: {}, GPU: {}",
+        id,
+        pids.len(),
+        workload_type,
+        has_gpu
+    );
 
     Ok(Some(ContainerInfo {
         id,
@@ -239,15 +236,17 @@ fn parse_container_cgroup(cgroup_path: &Path) -> Result<Option<ContainerInfo>> {
 fn extract_container_id(name: &str) -> String {
     // docker-<id>.scope -> <id>
     if let Some(id) = name.strip_prefix("docker-")
-        && let Some(id) = id.strip_suffix(".scope") {
-            return id[..12.min(id.len())].to_string();
-        }
+        && let Some(id) = id.strip_suffix(".scope")
+    {
+        return id[..12.min(id.len())].to_string();
+    }
 
     // libpod-<id>.scope -> <id>
     if let Some(id) = name.strip_prefix("libpod-")
-        && let Some(id) = id.strip_suffix(".scope") {
-            return id[..12.min(id.len())].to_string();
-        }
+        && let Some(id) = id.strip_suffix(".scope")
+    {
+        return id[..12.min(id.len())].to_string();
+    }
 
     // Already looks like an ID
     if name.len() >= 12 && name.chars().take(12).all(|c| c.is_ascii_hexdigit()) {
@@ -311,12 +310,13 @@ fn classify_container_workload(pids: &[u32], cgroup_path: &Path) -> (ContainerWo
     // Check if cgroup has NVIDIA device access
     let devices_path = cgroup_path.join("devices.list");
     if devices_path.exists()
-        && let Ok(devices) = fs::read_to_string(&devices_path) {
-            // NVIDIA devices are typically c 195:* (nvidia) or c 235:* (nvidia-uvm)
-            if devices.contains("195:") || devices.contains("235:") {
-                has_gpu = true;
-            }
+        && let Ok(devices) = fs::read_to_string(&devices_path)
+    {
+        // NVIDIA devices are typically c 195:* (nvidia) or c 235:* (nvidia-uvm)
+        if devices.contains("195:") || devices.contains("235:") {
+            has_gpu = true;
         }
+    }
 
     (workload_type, has_gpu)
 }
@@ -329,9 +329,7 @@ fn get_container_name(id: &str, runtime: &str) -> String {
             // For now, just use ID
             id.to_string()
         }
-        "podman" => {
-            id.to_string()
-        }
+        "podman" => id.to_string(),
         _ => id.to_string(),
     }
 }
@@ -385,8 +383,14 @@ impl ContainerMonitor {
         if !containers.is_empty() {
             info!("Containers: {} detected", containers.len());
             for c in &containers {
-                debug!("  {} ({}): {} PIDs, type: {}, GPU: {}",
-                       c.id, c.runtime, c.pids.len(), c.workload_type, c.has_gpu);
+                debug!(
+                    "  {} ({}): {} PIDs, type: {}, GPU: {}",
+                    c.id,
+                    c.runtime,
+                    c.pids.len(),
+                    c.workload_type,
+                    c.has_gpu
+                );
             }
         }
 
@@ -410,7 +414,8 @@ impl ContainerMonitor {
         let old_ids: HashSet<String> = self.containers.iter().map(|c| c.id.clone()).collect();
 
         // Find new containers
-        let new_containers: Vec<ContainerInfo> = current.into_iter()
+        let new_containers: Vec<ContainerInfo> = current
+            .into_iter()
             .filter(|c| !old_ids.contains(&c.id))
             .collect();
 
@@ -439,16 +444,15 @@ impl ContainerMonitor {
 
     /// Get AI container count
     pub fn ai_container_count(&self) -> usize {
-        self.containers.iter()
+        self.containers
+            .iter()
             .filter(|c| c.workload_type == ContainerWorkloadType::Ai)
             .count()
     }
 
     /// Get GPU container count
     pub fn gpu_container_count(&self) -> usize {
-        self.containers.iter()
-            .filter(|c| c.has_gpu)
-            .count()
+        self.containers.iter().filter(|c| c.has_gpu).count()
     }
 
     /// Get total container count

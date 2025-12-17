@@ -15,14 +15,14 @@ mod vm;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use libbpf_rs::skel::{OpenSkel, SkelBuilder};
 use libbpf_rs::MapCore;
-use log::{info, warn, debug};
+use libbpf_rs::skel::{OpenSkel, SkelBuilder};
+use log::{debug, info, warn};
 use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use bpf_skel::*;
 use topology::CpuTopology;
@@ -80,9 +80,9 @@ struct CpuCtx {
     ccd: u32,
     ccx: u32,
     node: u32,
-    smt_sibling: i32,  // SMT sibling CPU (-1 if none)
-    is_vcache: u8,     // bool in BPF is 1 byte
-    _pad: [u8; 3],     // padding for alignment
+    smt_sibling: i32, // SMT sibling CPU (-1 if none)
+    is_vcache: u8,    // bool in BPF is 1 byte
+    _pad: [u8; 3],    // padding for alignment
 }
 
 /// Scheduler state
@@ -115,14 +115,18 @@ impl<'a> Scheduler<'a> {
 
         // Detect CPU topology
         let topology = topology::detect_topology()?;
-        info!("Detected {} CPUs, {} CCDs", topology.nr_cpus, topology.nr_ccds);
+        info!(
+            "Detected {} CPUs, {} CCDs",
+            topology.nr_cpus, topology.nr_ccds
+        );
         if let Some(vcache) = topology.vcache_ccd {
             info!("X3D processor detected - V-Cache on CCD {}", vcache);
         }
 
         // Log per-CCD CPU distribution
         for ccd in 0..topology.nr_ccds {
-            let cpus_in_ccd: Vec<u32> = topology.cpu_to_ccd
+            let cpus_in_ccd: Vec<u32> = topology
+                .cpu_to_ccd
                 .iter()
                 .enumerate()
                 .filter(|&(_, c)| *c == ccd)
@@ -146,7 +150,10 @@ impl<'a> Scheduler<'a> {
         // Detect AMD prefcore rankings
         let prefcore = pbo::detect_prefcore(topology.nr_cpus)?;
         if prefcore.enabled {
-            info!("AMD Prefcore: enabled (max ranking: {})", prefcore.max_ranking);
+            info!(
+                "AMD Prefcore: enabled (max ranking: {})",
+                prefcore.max_ranking
+            );
         }
 
         // Detect NVIDIA GPUs
@@ -154,8 +161,10 @@ impl<'a> Scheduler<'a> {
         if gpu_monitor.gpu_count() > 0 {
             info!("GPU: {}", gpu_monitor.summary());
             if let Some(primary) = gpu_monitor.primary_gpu() {
-                info!("  Primary: {} ({} {})",
-                      primary.model, primary.pcie_speed, primary.pcie_width);
+                info!(
+                    "  Primary: {} ({} {})",
+                    primary.model, primary.pcie_speed, primary.pcie_width
+                );
             }
         }
 
@@ -166,10 +175,12 @@ impl<'a> Scheduler<'a> {
         // Detect VMs
         let vm_monitor = vm::VmMonitor::default();
         if vm_monitor.vm_count() > 0 {
-            info!("VMs: {} detected ({} gaming vCPUs, {} dev vCPUs)",
-                  vm_monitor.vm_count(),
-                  vm_monitor.gaming_vcpu_count(),
-                  vm_monitor.dev_vcpu_count());
+            info!(
+                "VMs: {} detected ({} gaming vCPUs, {} dev vCPUs)",
+                vm_monitor.vm_count(),
+                vm_monitor.gaming_vcpu_count(),
+                vm_monitor.dev_vcpu_count()
+            );
         }
         if vm_monitor.has_iommu() {
             info!("IOMMU: {}", vm_monitor.iommu_summary());
@@ -178,10 +189,12 @@ impl<'a> Scheduler<'a> {
         // Detect containers
         let container_monitor = container::ContainerMonitor::default();
         if container_monitor.container_count() > 0 {
-            info!("Containers: {} detected ({} AI, {} GPU)",
-                  container_monitor.container_count(),
-                  container_monitor.ai_container_count(),
-                  container_monitor.gpu_container_count());
+            info!(
+                "Containers: {} detected ({} AI, {} GPU)",
+                container_monitor.container_count(),
+                container_monitor.ai_container_count(),
+                container_monitor.gpu_container_count()
+            );
         }
         if container_monitor.ollama_count() > 0 {
             info!("Ollama: {} processes", container_monitor.ollama_count());
@@ -190,16 +203,19 @@ impl<'a> Scheduler<'a> {
         // Classify cgroups
         let cgroup_monitor = cgroup::CgroupMonitor::default();
         if cgroup_monitor.classified_count() > 0 {
-            info!("Cgroup classification: {} cgroups ({} gaming)",
-                  cgroup_monitor.classified_count(),
-                  cgroup_monitor.gaming_count());
+            info!(
+                "Cgroup classification: {} cgroups ({} gaming)",
+                cgroup_monitor.classified_count(),
+                cgroup_monitor.gaming_count()
+            );
         }
 
         // Build BPF skeleton
         let skel_builder = GhostbrewSkelBuilder::default();
         debug!("Opening BPF skeleton...");
 
-        let mut open_skel = skel_builder.open(open_object)
+        let mut open_skel = skel_builder
+            .open(open_object)
             .context("Failed to open BPF skeleton")?;
 
         // Configure tunables via rodata
@@ -217,8 +233,7 @@ impl<'a> Scheduler<'a> {
 
         // Load BPF program
         debug!("Loading BPF program...");
-        let mut skel = open_skel.load()
-            .context("Failed to load BPF program")?;
+        let mut skel = open_skel.load().context("Failed to load BPF program")?;
 
         // Populate cpu_ctxs map with topology info
         debug!("Populating CPU context map...");
@@ -232,14 +247,23 @@ impl<'a> Scheduler<'a> {
 
         // Attach struct_ops scheduler
         debug!("Attaching scheduler...");
-        let struct_ops = skel.maps.ghostbrew_ops.attach_struct_ops()
+        let struct_ops = skel
+            .maps
+            .ghostbrew_ops
+            .attach_struct_ops()
             .context("Failed to attach struct_ops scheduler")?;
 
         info!("GhostBrew scheduler attached successfully");
-        info!("  Per-CCD DSQs: {} (IDs 1-{})", topology.nr_ccds, topology.nr_ccds);
+        info!(
+            "  Per-CCD DSQs: {} (IDs 1-{})",
+            topology.nr_ccds, topology.nr_ccds
+        );
         info!("  V-Cache CCD: {}", topology.vcache_ccd.unwrap_or(0));
         if prefcore.enabled {
-            info!("  Prefcore: {} preferred CPUs", prefcore.preferred_cpus.len());
+            info!(
+                "  Prefcore: {} preferred CPUs",
+                prefcore.preferred_cpus.len()
+            );
         }
 
         Ok(Self {
@@ -281,31 +305,43 @@ impl<'a> Scheduler<'a> {
             let value = unsafe {
                 std::slice::from_raw_parts(
                     &ctx as *const CpuCtx as *const u8,
-                    std::mem::size_of::<CpuCtx>()
+                    std::mem::size_of::<CpuCtx>(),
                 )
             };
 
-            skel.maps.cpu_ctxs.update(&key, value, libbpf_rs::MapFlags::ANY)
+            skel.maps
+                .cpu_ctxs
+                .update(&key, value, libbpf_rs::MapFlags::ANY)
                 .with_context(|| format!("Failed to update cpu_ctxs for CPU {}", cpu))?;
 
-            debug!("CPU {}: CCD={}, CCX={}, node={}, vcache={}, smt_sibling={}",
-                   cpu, ccd, ccx, node, ctx.is_vcache, smt_sibling);
+            debug!(
+                "CPU {}: CCD={}, CCX={}, node={}, vcache={}, smt_sibling={}",
+                cpu, ccd, ccx, node, ctx.is_vcache, smt_sibling
+            );
         }
 
         Ok(())
     }
 
     /// Initialize prefcore rankings in BPF map
-    fn init_prefcore_rankings(skel: &mut GhostbrewSkel, prefcore: &pbo::PrefcoreInfo) -> Result<()> {
+    fn init_prefcore_rankings(
+        skel: &mut GhostbrewSkel,
+        prefcore: &pbo::PrefcoreInfo,
+    ) -> Result<()> {
         for (cpu, &ranking) in prefcore.rankings.iter().enumerate() {
             let key = (cpu as u32).to_ne_bytes();
             let value = ranking.to_ne_bytes();
 
-            skel.maps.prefcore_rankings.update(&key, &value, libbpf_rs::MapFlags::ANY)
+            skel.maps
+                .prefcore_rankings
+                .update(&key, &value, libbpf_rs::MapFlags::ANY)
                 .with_context(|| format!("Failed to update prefcore_rankings for CPU {}", cpu))?;
         }
 
-        debug!("Populated prefcore rankings for {} CPUs", prefcore.rankings.len());
+        debug!(
+            "Populated prefcore rankings for {} CPUs",
+            prefcore.rankings.len()
+        );
         Ok(())
     }
 
@@ -313,7 +349,14 @@ impl<'a> Scheduler<'a> {
         info!("GhostBrew v{} running...", env!("CARGO_PKG_VERSION"));
         info!("Burst threshold: {} ns", self.args.burst_threshold);
         info!("Time slice: {} ns", self.args.slice_ns);
-        info!("SMT: {}", if self.topology.smt_enabled { "enabled" } else { "disabled" });
+        info!(
+            "SMT: {}",
+            if self.topology.smt_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
 
         // Initial gaming PID scan
         self.update_gaming_pids();
@@ -370,7 +413,12 @@ impl<'a> Scheduler<'a> {
                 for (pid, class) in new_pids {
                     let key = pid.to_ne_bytes();
                     let value = class.to_ne_bytes();
-                    if let Err(e) = self.skel.maps.gaming_pids.update(&key, &value, libbpf_rs::MapFlags::ANY) {
+                    if let Err(e) =
+                        self.skel
+                            .maps
+                            .gaming_pids
+                            .update(&key, &value, libbpf_rs::MapFlags::ANY)
+                    {
                         debug!("Failed to add gaming PID {}: {}", pid, e);
                     }
                 }
@@ -398,8 +446,12 @@ impl<'a> Scheduler<'a> {
             Ok((new_vms, removed_pids)) => {
                 // Log new VMs
                 for vm in &new_vms {
-                    info!("New VM detected: {} ({}) with {} vCPUs",
-                          vm.name, vm.workload_type, vm.vcpu_pids.len());
+                    info!(
+                        "New VM detected: {} ({}) with {} vCPUs",
+                        vm.name,
+                        vm.workload_type,
+                        vm.vcpu_pids.len()
+                    );
                 }
 
                 // Update BPF map with all vCPU workloads
@@ -407,13 +459,17 @@ impl<'a> Scheduler<'a> {
                 for (pid, workload_type) in workloads {
                     let key = pid.to_ne_bytes();
                     let class = match workload_type {
-                        vm::VmWorkloadType::Gaming => 6u32, // WORKLOAD_VM_GAMING
-                        vm::VmWorkloadType::Dev => 5u32,    // WORKLOAD_VM_DEV
-                        vm::VmWorkloadType::Ai => 4u32,     // WORKLOAD_AI
+                        vm::VmWorkloadType::Gaming => 6u32,  // WORKLOAD_VM_GAMING
+                        vm::VmWorkloadType::Dev => 5u32,     // WORKLOAD_VM_DEV
+                        vm::VmWorkloadType::Ai => 4u32,      // WORKLOAD_AI
                         vm::VmWorkloadType::Unknown => 5u32, // Default to dev
                     };
                     let value = class.to_ne_bytes();
-                    let _ = self.skel.maps.vm_vcpu_pids.update(&key, &value, libbpf_rs::MapFlags::ANY);
+                    let _ =
+                        self.skel
+                            .maps
+                            .vm_vcpu_pids
+                            .update(&key, &value, libbpf_rs::MapFlags::ANY);
                 }
 
                 // Remove old PIDs
@@ -434,9 +490,13 @@ impl<'a> Scheduler<'a> {
             Ok((new_containers, removed_ids)) => {
                 // Log new containers
                 for container in &new_containers {
-                    info!("New container detected: {} ({}) with {} PIDs, GPU: {}",
-                          container.id, container.workload_type,
-                          container.pids.len(), container.has_gpu);
+                    info!(
+                        "New container detected: {} ({}) with {} PIDs, GPU: {}",
+                        container.id,
+                        container.workload_type,
+                        container.pids.len(),
+                        container.has_gpu
+                    );
                 }
 
                 // Update BPF map with all container PIDs
@@ -444,13 +504,17 @@ impl<'a> Scheduler<'a> {
                 for (pid, workload_type) in pids {
                     let key = pid.to_ne_bytes();
                     let class = match workload_type {
-                        container::ContainerWorkloadType::Ai => 4u32,      // WORKLOAD_AI
-                        container::ContainerWorkloadType::Gaming => 1u32,  // WORKLOAD_GAMING
+                        container::ContainerWorkloadType::Ai => 4u32, // WORKLOAD_AI
+                        container::ContainerWorkloadType::Gaming => 1u32, // WORKLOAD_GAMING
                         container::ContainerWorkloadType::Compute => 3u32, // WORKLOAD_BATCH
                         container::ContainerWorkloadType::General => 7u32, // WORKLOAD_CONTAINER
                     };
                     let value = class.to_ne_bytes();
-                    let _ = self.skel.maps.container_pids.update(&key, &value, libbpf_rs::MapFlags::ANY);
+                    let _ = self.skel.maps.container_pids.update(
+                        &key,
+                        &value,
+                        libbpf_rs::MapFlags::ANY,
+                    );
                 }
 
                 // Log removed containers
@@ -469,7 +533,10 @@ impl<'a> Scheduler<'a> {
         match self.cgroup_monitor.rescan() {
             Ok((new_cgroups, removed_ids)) => {
                 // Log new gaming cgroups
-                for cg in new_cgroups.iter().filter(|c| c.workload_class == cgroup::WORKLOAD_GAMING) {
+                for cg in new_cgroups
+                    .iter()
+                    .filter(|c| c.workload_class == cgroup::WORKLOAD_GAMING)
+                {
                     info!("Gaming cgroup detected: {}", cg.path);
                 }
 
@@ -478,7 +545,11 @@ impl<'a> Scheduler<'a> {
                 for (&cgroup_id, &workload_class) in classifications {
                     let key = cgroup_id.to_ne_bytes();
                     let value = workload_class.to_ne_bytes();
-                    let _ = self.skel.maps.cgroup_classes.update(&key, &value, libbpf_rs::MapFlags::ANY);
+                    let _ = self.skel.maps.cgroup_classes.update(
+                        &key,
+                        &value,
+                        libbpf_rs::MapFlags::ANY,
+                    );
                 }
 
                 // Remove old cgroups from map
@@ -514,20 +585,27 @@ impl<'a> Scheduler<'a> {
         let bss = &self.skel.maps.bss_data;
         println!("--- GhostBrew Stats ---");
         println!("  Enqueued: {}", bss.nr_enqueued);
-        println!("  Dispatched: {} (direct: {})",
-                 bss.nr_dispatched, bss.nr_direct_dispatched);
+        println!(
+            "  Dispatched: {} (direct: {})",
+            bss.nr_dispatched, bss.nr_direct_dispatched
+        );
         println!("  Gaming tasks: {}", bss.nr_gaming_tasks);
         println!("  Interactive tasks: {}", bss.nr_interactive_tasks);
         println!("  V-Cache migrations: {}", bss.nr_vcache_migrations);
-        println!("  CCD local: {} | cross: {}",
-                 bss.nr_ccd_local, bss.nr_ccd_cross);
+        println!(
+            "  CCD local: {} | cross: {}",
+            bss.nr_ccd_local, bss.nr_ccd_cross
+        );
         println!("  SMT idle picks: {}", bss.nr_smt_idle_picks);
         println!("  Compaction overflows: {}", bss.nr_compaction_overflows);
         println!("  Preempt kicks: {}", bss.nr_preempt_kicks);
         // Phase 4a stats
         println!("  Proton tasks: {}", bss.nr_proton_tasks);
         println!("  Parent chain detects: {}", bss.nr_parent_chain_detects);
-        println!("  Userspace hint detects: {}", bss.nr_userspace_hint_detects);
+        println!(
+            "  Userspace hint detects: {}",
+            bss.nr_userspace_hint_detects
+        );
         println!("  Prefcore placements: {}", bss.nr_prefcore_placements);
         if self.topology.is_x3d {
             println!("  V-Cache CCD: {}", self.topology.vcache_ccd.unwrap_or(0));
@@ -535,29 +613,46 @@ impl<'a> Scheduler<'a> {
         // Phase 4b stats - GPU
         println!("  GPU feeder tasks: {}", bss.nr_gpu_feeder_tasks);
         if self.gpu_monitor.gpu_count() > 0 {
-            println!("  GPU: {} ({})",
-                     self.gpu_monitor.summary(),
-                     if self.gpu_monitor.any_gpu_active() { "active" } else { "idle" });
+            println!(
+                "  GPU: {} ({})",
+                self.gpu_monitor.summary(),
+                if self.gpu_monitor.any_gpu_active() {
+                    "active"
+                } else {
+                    "idle"
+                }
+            );
         }
         // Phase 4c stats - VM/Container
         if bss.nr_vm_vcpu_tasks > 0 || self.vm_monitor.vm_count() > 0 {
-            println!("  VM vCPU tasks: {} (gaming: {}, dev: {})",
-                     bss.nr_vm_vcpu_tasks, bss.nr_gaming_vm_vcpus, bss.nr_dev_vm_vcpus);
+            println!(
+                "  VM vCPU tasks: {} (gaming: {}, dev: {})",
+                bss.nr_vm_vcpu_tasks, bss.nr_gaming_vm_vcpus, bss.nr_dev_vm_vcpus
+            );
         }
         if bss.nr_container_tasks > 0 || self.container_monitor.container_count() > 0 {
-            println!("  Container tasks: {} (AI: {})",
-                     bss.nr_container_tasks, bss.nr_ai_container_tasks);
+            println!(
+                "  Container tasks: {} (AI: {})",
+                bss.nr_container_tasks, bss.nr_ai_container_tasks
+            );
         }
         if self.container_monitor.ollama_count() > 0 {
-            println!("  Ollama processes: {}", self.container_monitor.ollama_count());
+            println!(
+                "  Ollama processes: {}",
+                self.container_monitor.ollama_count()
+            );
         }
         // Phase 4d stats - Cgroup classification
         if bss.nr_cgroup_classifications > 0 || self.cgroup_monitor.classified_count() > 0 {
-            println!("  Cgroup classifications: {} (gaming: {})",
-                     bss.nr_cgroup_classifications, bss.nr_cgroup_gaming);
-            println!("  Cgroups monitored: {} ({} gaming)",
-                     self.cgroup_monitor.classified_count(),
-                     self.cgroup_monitor.gaming_count());
+            println!(
+                "  Cgroup classifications: {} (gaming: {})",
+                bss.nr_cgroup_classifications, bss.nr_cgroup_gaming
+            );
+            println!(
+                "  Cgroups monitored: {} ({} gaming)",
+                self.cgroup_monitor.classified_count(),
+                self.cgroup_monitor.gaming_count()
+            );
         }
         println!("---");
     }
@@ -575,9 +670,7 @@ fn main() -> Result<()> {
         "warn"
     };
 
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(log_level)
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     info!("scx_{} v{}", SCHEDULER_NAME, env!("CARGO_PKG_VERSION"));
 
@@ -597,7 +690,8 @@ fn main() -> Result<()> {
     ctrlc::set_handler(move || {
         info!("Received shutdown signal");
         shutdown_clone.store(true, Ordering::Relaxed);
-    }).context("Failed to set signal handler")?;
+    })
+    .context("Failed to set signal handler")?;
 
     // Initialize and run scheduler
     let mut open_object = MaybeUninit::uninit();

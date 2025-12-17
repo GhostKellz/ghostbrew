@@ -12,11 +12,11 @@ use std::path::Path;
 /// GPU power state
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GpuPowerState {
-    D0,      // Fully on
-    D1,      // Light sleep
-    D2,      // Deep sleep
-    D3Hot,   // Powered but suspended
-    D3Cold,  // Powered off
+    D0,     // Fully on
+    D1,     // Light sleep
+    D2,     // Deep sleep
+    D3Hot,  // Powered but suspended
+    D3Cold, // Powered off
     Unknown,
 }
 
@@ -85,7 +85,10 @@ pub fn detect_nvidia_gpus() -> Result<Vec<NvidiaGpuInfo>> {
         let pci_address = entry.file_name().to_string_lossy().to_string();
 
         if let Ok(gpu_info) = read_gpu_info(&pci_address, rebar_enabled) {
-            info!("Detected NVIDIA GPU: {} at {}", gpu_info.model, gpu_info.pci_address);
+            info!(
+                "Detected NVIDIA GPU: {} at {}",
+                gpu_info.model, gpu_info.pci_address
+            );
             gpus.push(gpu_info);
         }
     }
@@ -159,9 +162,10 @@ fn read_gpu_power_state(pci_address: &str) -> GpuPowerState {
     let power_path = format!("/proc/driver/nvidia/gpus/{}/power", pci_address);
     if let Ok(content) = fs::read_to_string(&power_path)
         && content.contains("Runtime D3 status:")
-            && (content.contains("Disabled") || content.contains("Not supported")) {
-                return GpuPowerState::D0; // Assume active if D3 disabled
-            }
+        && (content.contains("Disabled") || content.contains("Not supported"))
+    {
+        return GpuPowerState::D0; // Assume active if D3 disabled
+    }
 
     // Check PCI power state
     let pci_power_path = format!("/sys/bus/pci/devices/{}/power_state", pci_address);
@@ -221,9 +225,10 @@ fn read_bar1_size(pci_base: &str) -> u64 {
                         u64::from_str_radix(parts[0].trim_start_matches("0x"), 16),
                         u64::from_str_radix(parts[1].trim_start_matches("0x"), 16),
                     )
-                        && end > start {
-                            return end - start + 1;
-                        }
+                    && end > start
+                {
+                    return end - start + 1;
+                }
             }
         }
     }
@@ -271,8 +276,10 @@ impl GpuMonitor {
             let new_state = read_gpu_power_state(&gpu.pci_address);
 
             if idx < self.last_power_states.len() && new_state != self.last_power_states[idx] {
-                debug!("GPU {} power state changed: {} -> {}",
-                       gpu.pci_address, self.last_power_states[idx], new_state);
+                debug!(
+                    "GPU {} power state changed: {} -> {}",
+                    gpu.pci_address, self.last_power_states[idx], new_state
+                );
                 self.last_power_states[idx] = new_state;
                 changed = true;
             }
@@ -289,11 +296,19 @@ impl GpuMonitor {
             return "No NVIDIA GPUs detected".to_string();
         }
 
-        let rebar = if self.rebar_enabled() { "ReBAR" } else { "no ReBAR" };
+        let rebar = if self.rebar_enabled() {
+            "ReBAR"
+        } else {
+            "no ReBAR"
+        };
         let bar1_gb = self.total_bar1_size() as f64 / (1024.0 * 1024.0 * 1024.0);
 
-        format!("{} GPU(s), {}, {:.0}GB BAR1",
-                self.gpus.len(), rebar, bar1_gb)
+        format!(
+            "{} GPU(s), {}, {:.0}GB BAR1",
+            self.gpus.len(),
+            rebar,
+            bar1_gb
+        )
     }
 
     /// Get GPU count
@@ -319,24 +334,26 @@ impl Default for GpuMonitor {
 /// GPU-feeding thread patterns (for BPF detection hints)
 #[allow(dead_code)]
 pub const GPU_THREAD_PATTERNS: &[&str] = &[
-    "vk",           // Vulkan threads
+    "vk", // Vulkan threads
     "VkThread",
     "vulkan",
-    "gl",           // OpenGL threads
+    "gl", // OpenGL threads
     "GLThread",
     "opengl",
-    "nvidia",       // NVIDIA driver threads
+    "nvidia", // NVIDIA driver threads
     "nv_queue",
     "threaded_gl",
-    "dxvk",         // DXVK (Vulkan translation layer)
-    "vkd3d",        // VKD3D (D3D12 translation)
+    "dxvk",  // DXVK (Vulkan translation layer)
+    "vkd3d", // VKD3D (D3D12 translation)
 ];
 
 /// Check if a process name looks like a GPU-feeding thread
 #[allow(dead_code)]
 pub fn is_gpu_thread_name(name: &str) -> bool {
     let lower = name.to_lowercase();
-    GPU_THREAD_PATTERNS.iter().any(|p| lower.contains(&p.to_lowercase()))
+    GPU_THREAD_PATTERNS
+        .iter()
+        .any(|p| lower.contains(&p.to_lowercase()))
 }
 
 #[cfg(test)]

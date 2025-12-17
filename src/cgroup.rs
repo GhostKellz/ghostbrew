@@ -38,35 +38,16 @@ const GAMING_PATTERNS: &[&str] = &[
 ];
 
 /// Container cgroup patterns
-const CONTAINER_PATTERNS: &[&str] = &[
-    "docker",
-    "libpod",
-    "podman",
-    "containerd",
-    "cri-o",
-    "lxc",
-];
+const CONTAINER_PATTERNS: &[&str] = &["docker", "libpod", "podman", "containerd", "cri-o", "lxc"];
 
 /// AI/ML cgroup patterns
-const AI_PATTERNS: &[&str] = &[
-    "ollama",
-    "pytorch",
-    "tensorflow",
-    "cuda",
-];
+const AI_PATTERNS: &[&str] = &["ollama", "pytorch", "tensorflow", "cuda"];
 
 /// VM cgroup patterns (for QEMU/libvirt)
-const VM_PATTERNS: &[&str] = &[
-    "machine-qemu",
-    "machine.slice",
-    "libvirt",
-];
+const VM_PATTERNS: &[&str] = &["machine-qemu", "machine.slice", "libvirt"];
 
 /// Batch/system cgroup patterns (low priority)
-const BATCH_PATTERNS: &[&str] = &[
-    "system.slice",
-    "background.slice",
-];
+const BATCH_PATTERNS: &[&str] = &["system.slice", "background.slice"];
 
 /// Cgroup information with classification
 #[derive(Debug, Clone)]
@@ -85,9 +66,10 @@ fn get_cgroup_id(path: &Path) -> Option<u64> {
     // Try reading cgroup.id file first (cgroup v2)
     let id_path = path.join("cgroup.id");
     if let Ok(content) = fs::read_to_string(&id_path)
-        && let Ok(id) = content.trim().parse::<u64>() {
-            return Some(id);
-        }
+        && let Ok(id) = content.trim().parse::<u64>()
+    {
+        return Some(id);
+    }
 
     // Fallback: use inode number of the directory
     // Note: This may not exactly match kernel's kn->id
@@ -184,9 +166,12 @@ fn scan_cgroup_dir(dir: &Path, relative_path: &str, cgroups: &mut Vec<CgroupInfo
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Skip pseudo-files and controllers
-                if name.starts_with("cgroup.") || name.starts_with("cpu.") ||
-                   name.starts_with("memory.") || name.starts_with("io.") ||
-                   name.starts_with("pids.") {
+                if name.starts_with("cgroup.")
+                    || name.starts_with("cpu.")
+                    || name.starts_with("memory.")
+                    || name.starts_with("io.")
+                    || name.starts_with("pids.")
+                {
                     continue;
                 }
 
@@ -223,16 +208,33 @@ impl CgroupMonitor {
             path_map.insert(cg.id, cg.path.clone());
         }
 
-        let gaming_count = cgroups.iter().filter(|c| c.workload_class == WORKLOAD_GAMING).count();
-        let container_count = cgroups.iter().filter(|c| c.workload_class == WORKLOAD_CONTAINER).count();
-        let ai_count = cgroups.iter().filter(|c| c.workload_class == WORKLOAD_AI).count();
+        let gaming_count = cgroups
+            .iter()
+            .filter(|c| c.workload_class == WORKLOAD_GAMING)
+            .count();
+        let container_count = cgroups
+            .iter()
+            .filter(|c| c.workload_class == WORKLOAD_CONTAINER)
+            .count();
+        let ai_count = cgroups
+            .iter()
+            .filter(|c| c.workload_class == WORKLOAD_AI)
+            .count();
 
         if !cgroups.is_empty() {
-            info!("Cgroups: {} classified ({} gaming, {} container, {} AI)",
-                  cgroups.len(), gaming_count, container_count, ai_count);
+            info!(
+                "Cgroups: {} classified ({} gaming, {} container, {} AI)",
+                cgroups.len(),
+                gaming_count,
+                container_count,
+                ai_count
+            );
 
             // Log gaming cgroups specifically
-            for cg in cgroups.iter().filter(|c| c.workload_class == WORKLOAD_GAMING) {
+            for cg in cgroups
+                .iter()
+                .filter(|c| c.workload_class == WORKLOAD_GAMING)
+            {
                 debug!("  Gaming cgroup: {} (id={})", cg.path, cg.id);
             }
         }
@@ -248,10 +250,12 @@ impl CgroupMonitor {
         let current = scan_cgroups()?;
 
         let current_ids: std::collections::HashSet<u64> = current.iter().map(|c| c.id).collect();
-        let old_ids: std::collections::HashSet<u64> = self.classifications.keys().copied().collect();
+        let old_ids: std::collections::HashSet<u64> =
+            self.classifications.keys().copied().collect();
 
         // Find new cgroups
-        let new_cgroups: Vec<CgroupInfo> = current.iter()
+        let new_cgroups: Vec<CgroupInfo> = current
+            .iter()
             .filter(|c| !old_ids.contains(&c.id))
             .cloned()
             .collect();
@@ -269,7 +273,10 @@ impl CgroupMonitor {
 
         // Log changes
         for cg in &new_cgroups {
-            debug!("New cgroup classified: {} -> class {}", cg.path, cg.workload_class);
+            debug!(
+                "New cgroup classified: {} -> class {}",
+                cg.path, cg.workload_class
+            );
         }
         for id in &removed_ids {
             if let Some(path) = self.path_map.get(id) {
@@ -292,19 +299,28 @@ impl CgroupMonitor {
 
     /// Get count of gaming cgroups
     pub fn gaming_count(&self) -> usize {
-        self.classifications.values().filter(|&&c| c == WORKLOAD_GAMING).count()
+        self.classifications
+            .values()
+            .filter(|&&c| c == WORKLOAD_GAMING)
+            .count()
     }
 
     /// Get count of container cgroups
     #[allow(dead_code)]
     pub fn container_count(&self) -> usize {
-        self.classifications.values().filter(|&&c| c == WORKLOAD_CONTAINER).count()
+        self.classifications
+            .values()
+            .filter(|&&c| c == WORKLOAD_CONTAINER)
+            .count()
     }
 
     /// Get count of AI cgroups
     #[allow(dead_code)]
     pub fn ai_count(&self) -> usize {
-        self.classifications.values().filter(|&&c| c == WORKLOAD_AI).count()
+        self.classifications
+            .values()
+            .filter(|&&c| c == WORKLOAD_AI)
+            .count()
     }
 }
 
@@ -323,9 +339,15 @@ mod tests {
 
     #[test]
     fn test_classify_cgroup_path() {
-        assert_eq!(classify_cgroup_path("user.slice/gaming.slice/steam"), WORKLOAD_GAMING);
+        assert_eq!(
+            classify_cgroup_path("user.slice/gaming.slice/steam"),
+            WORKLOAD_GAMING
+        );
         assert_eq!(classify_cgroup_path("docker/abc123"), WORKLOAD_CONTAINER);
-        assert_eq!(classify_cgroup_path("system.slice/sshd.service"), WORKLOAD_BATCH);
+        assert_eq!(
+            classify_cgroup_path("system.slice/sshd.service"),
+            WORKLOAD_BATCH
+        );
         assert_eq!(classify_cgroup_path("user.slice/user-1000.slice"), 0);
     }
 

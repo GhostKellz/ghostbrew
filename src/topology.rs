@@ -18,7 +18,7 @@ pub struct CpuTopology {
     pub cpu_to_ccd: Vec<u32>,
     pub cpu_to_ccx: Vec<u32>,
     pub cpu_to_node: Vec<u32>,
-    pub cpu_to_sibling: Vec<i32>,  // SMT sibling CPU (-1 if none)
+    pub cpu_to_sibling: Vec<i32>, // SMT sibling CPU (-1 if none)
     pub smt_enabled: bool,
     pub is_x3d: bool,
     pub model_name: String,
@@ -26,12 +26,7 @@ pub struct CpuTopology {
 
 /// Known X3D processor models
 const X3D_MODELS: &[&str] = &[
-    "7800X3D",
-    "7900X3D",
-    "7950X3D",
-    "9800X3D",
-    "9900X3D",
-    "9950X3D",
+    "7800X3D", "7900X3D", "7950X3D", "9800X3D", "9900X3D", "9950X3D",
 ];
 
 /// Detect CPU topology
@@ -92,14 +87,14 @@ fn detect_nr_cpus() -> Result<u32> {
 
 /// Get CPU model name
 fn detect_model_name() -> Result<String> {
-    let cpuinfo = fs::read_to_string("/proc/cpuinfo")
-        .context("Failed to read /proc/cpuinfo")?;
+    let cpuinfo = fs::read_to_string("/proc/cpuinfo").context("Failed to read /proc/cpuinfo")?;
 
     for line in cpuinfo.lines() {
         if line.starts_with("model name")
-            && let Some((_, name)) = line.split_once(':') {
-                return Ok(name.trim().to_string());
-            }
+            && let Some((_, name)) = line.split_once(':')
+        {
+            return Ok(name.trim().to_string());
+        }
     }
 
     Ok("Unknown".to_string())
@@ -127,7 +122,7 @@ fn detect_vcache_ccd(model_name: &str, nr_ccds: u32) -> Option<u32> {
         return Some(0);
     }
 
-    Some(0)  // Default assumption
+    Some(0) // Default assumption
 }
 
 /// Detect per-CPU topology (CCD, CCX, NUMA node)
@@ -145,13 +140,11 @@ fn detect_cpu_topology(nr_cpus: u32) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
             .unwrap_or(0);
 
         // Read cluster ID (CCX on Zen)
-        let cluster_id = read_topology_file(&format!("{}/cluster_id", base))
-            .unwrap_or(0);
+        let cluster_id = read_topology_file(&format!("{}/cluster_id", base)).unwrap_or(0);
 
         // For AMD Zen, we can approximate CCD from core_id ranges
         // Typically: CCD0 = cores 0-7, CCD1 = cores 8-15 (for 16-core)
-        let core_id = read_topology_file(&format!("{}/core_id", base))
-            .unwrap_or(cpu);
+        let core_id = read_topology_file(&format!("{}/core_id", base)).unwrap_or(cpu);
 
         // Heuristic: cores 0-7 = CCD0, 8-15 = CCD1, etc.
         // This works for most Zen4/Zen5 layouts
@@ -164,7 +157,10 @@ fn detect_cpu_topology(nr_cpus: u32) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
         let node = detect_cpu_node(cpu).unwrap_or(0);
         cpu_to_node[cpu as usize] = node;
 
-        debug!("CPU {}: CCD={}, CCX={}, Node={}", cpu, ccd, cluster_id, node);
+        debug!(
+            "CPU {}: CCD={}, CCX={}, Node={}",
+            cpu, ccd, cluster_id, node
+        );
     }
 
     Ok((cpu_to_ccd, cpu_to_ccx, cpu_to_node))
@@ -172,9 +168,10 @@ fn detect_cpu_topology(nr_cpus: u32) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
 
 /// Read a topology file and parse as u32
 fn read_topology_file(path: &str) -> Result<u32> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path))?;
-    content.trim().parse()
+    let content = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path))?;
+    content
+        .trim()
+        .parse()
         .with_context(|| format!("Failed to parse {}", path))
 }
 
@@ -184,7 +181,10 @@ fn detect_smt_siblings(nr_cpus: u32) -> Result<(Vec<i32>, bool)> {
     let mut smt_enabled = false;
 
     for cpu in 0..nr_cpus {
-        let path = format!("/sys/devices/system/cpu/cpu{}/topology/thread_siblings_list", cpu);
+        let path = format!(
+            "/sys/devices/system/cpu/cpu{}/topology/thread_siblings_list",
+            cpu
+        );
 
         if let Ok(siblings_str) = fs::read_to_string(&path) {
             let siblings: Vec<u32> = parse_cpu_list(&siblings_str);
@@ -199,7 +199,10 @@ fn detect_smt_siblings(nr_cpus: u32) -> Result<(Vec<i32>, bool)> {
             }
         }
 
-        debug!("CPU {}: SMT sibling = {}", cpu, cpu_to_sibling[cpu as usize]);
+        debug!(
+            "CPU {}: SMT sibling = {}",
+            cpu, cpu_to_sibling[cpu as usize]
+        );
     }
 
     Ok((cpu_to_sibling, smt_enabled))
@@ -235,9 +238,10 @@ fn detect_cpu_node(cpu: u32) -> Result<u32> {
     for node in 0..8 {
         let path = format!("/sys/devices/system/node/node{}/cpulist", node);
         if let Ok(cpulist) = fs::read_to_string(&path)
-            && cpu_in_list(cpu, &cpulist) {
-                return Ok(node);
-            }
+            && cpu_in_list(cpu, &cpulist)
+        {
+            return Ok(node);
+        }
     }
 
     Ok(0)
@@ -248,13 +252,16 @@ fn cpu_in_list(cpu: u32, list: &str) -> bool {
     for range in list.trim().split(',') {
         if let Some((start, end)) = range.split_once('-') {
             if let (Ok(s), Ok(e)) = (start.parse::<u32>(), end.parse::<u32>())
-                && cpu >= s && cpu <= e {
-                    return true;
-                }
-        } else if let Ok(single) = range.parse::<u32>()
-            && cpu == single {
+                && cpu >= s
+                && cpu <= e
+            {
                 return true;
             }
+        } else if let Ok(single) = range.parse::<u32>()
+            && cpu == single
+        {
+            return true;
+        }
     }
     false
 }

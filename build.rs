@@ -4,16 +4,14 @@
 //
 // Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
 
+use libbpf_cargo::SkeletonBuilder;
 use std::env;
 use std::path::PathBuf;
-use libbpf_cargo::SkeletonBuilder;
 
 const BPF_SRC: &str = "src/bpf/ghostbrew.bpf.c";
 
 fn main() {
-    let out_dir = PathBuf::from(
-        env::var("OUT_DIR").expect("OUT_DIR not set")
-    );
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     let skel_path = out_dir.join("ghostbrew.skel.rs");
 
@@ -27,14 +25,19 @@ fn main() {
     SkeletonBuilder::new()
         .source(BPF_SRC)
         .clang_args([
-            "-I", "src/bpf",           // For vmlinux.h
-            "-I", "src/bpf/scx",       // For scx headers (if needed directly)
-            "-D__TARGET_ARCH_x86",     // Target architecture
-            "-g",                       // Debug info for BTF
-            "-O2",                      // Optimization
+            "-I",
+            "src/bpf", // For vmlinux.h
+            "-I",
+            "src/bpf/scx",         // For scx headers (if needed directly)
+            "-D__TARGET_ARCH_x86", // Target architecture
+            "-g",                  // Debug info for BTF
+            "-O2",                 // Optimization
         ])
         .build_and_generate(&skel_path)
         .expect("Failed to build BPF skeleton");
 
-    println!("cargo:warning=BPF skeleton generated at: {}", skel_path.display());
+    println!(
+        "cargo:warning=BPF skeleton generated at: {}",
+        skel_path.display()
+    );
 }
