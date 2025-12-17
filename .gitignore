@@ -1,5 +1,9 @@
+# Archive (internal docs, legacy code)
+archive/
+target/ 
+
 # Rust
-/target
+/target/
 **/*.rs.bk
 
 # Binaries
@@ -26,7 +30,5 @@
 *.pkg.tar.zst
 pkg/
 
-# Go legacy (if needed)
-/archive/go-v0.1/bin/
-/archive/go-v0.1/.go-build
-/target
+# Claude notes
+CLAUDE.md

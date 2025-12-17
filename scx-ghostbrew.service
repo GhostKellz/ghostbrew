@@ -1,0 +1,33 @@
+[Unit]
+Description=GhostBrew sched-ext Scheduler for AMD Zen4/Zen5 X3D
+Documentation=https://github.com/ghostkellz/ghostbrew
+After=multi-user.target
+
+# Ensure sched-ext is available
+ConditionPathExists=/sys/kernel/sched_ext
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/scx_ghostbrew --gaming --verbose
+ExecStop=/bin/kill -SIGINT $MAINPID
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5
+
+# Run as root (required for sched-ext)
+User=root
+
+# Resource limits
+LimitMEMLOCK=infinity
+
+# Security hardening (where possible)
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadOnlyPaths=/
+ReadWritePaths=/sys/kernel/sched_ext
+
+[Install]
+WantedBy=multi-user.target
