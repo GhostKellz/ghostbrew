@@ -1,0 +1,36 @@
+# GhostBrew Configuration - Gaming Mode
+#
+# Optimized for gaming and latency-sensitive workloads.
+# Prioritizes frame consistency over raw throughput.
+#
+# Install: cp gaming.toml /etc/ghostbrew/config.toml
+
+[defaults]
+# Aggressive burst threshold for smooth gameplay
+burst_threshold_ns = 1500000  # 1.5ms
+
+# Shorter slice for responsiveness
+slice_ns = 2500000  # 2.5ms
+
+# Gaming mode enabled
+gaming_mode = true
+
+# Frequent stats updates
+stats_interval = 2
+
+[amd]
+# Prefer V-Cache CCD for all tasks
+prefer_vcache = true
+
+# Enable Prefcore integration
+prefcore_enabled = true
+
+# Follow ghost-vcache for mode switching
+vcache_switching = "follow_ghost_vcache"
+
+[intel]
+# Always use P-cores for games
+prefer_pcores = true
+
+# Conservative E-core offload (only explicit batch)
+ecore_offload = "conservative"

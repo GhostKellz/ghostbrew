@@ -1,0 +1,36 @@
+# GhostBrew Configuration - Streaming Mode
+#
+# Optimized for live streaming (OBS, Sunshine) while gaming.
+# Balances game performance with encoder thread priority.
+#
+# Install: cp streaming.toml /etc/ghostbrew/config.toml
+
+[defaults]
+# Moderate burst threshold for both game and encoder
+burst_threshold_ns = 2000000  # 2ms
+
+# Standard slice
+slice_ns = 3000000  # 3ms
+
+# Gaming mode to prioritize game + encoder
+gaming_mode = true
+
+# Stats every 2 seconds
+stats_interval = 2
+
+[amd]
+# V-Cache helps both game and encoder
+prefer_vcache = true
+
+# Enable Prefcore
+prefcore_enabled = true
+
+# Automatic switching based on workload
+vcache_switching = "automatic"
+
+[intel]
+# P-cores for game, E-cores for encoding background tasks
+prefer_pcores = true
+
+# Conservative - don't offload encoder threads
+ecore_offload = "conservative"

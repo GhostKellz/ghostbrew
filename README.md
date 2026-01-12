@@ -20,6 +20,11 @@
   <a href="#linux-ghost"><img src="https://img.shields.io/badge/linux--ghost-Integration-FCD34D?style=for-the-badge&logo=linux&logoColor=black" alt="linux-ghost Integration"></a>
 </p>
 
+<p align="center">
+  <a href="#intel-hybrid"><img src="https://img.shields.io/badge/Intel-Hybrid%20P%2FE-0071C5?style=for-the-badge&logo=intel&logoColor=white" alt="Intel Hybrid"></a>
+  <a href="#supported-kernels"><img src="https://img.shields.io/badge/CachyOS-Supported-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" alt="CachyOS Supported"></a>
+</p>
+
 ---
 
 ## What is GhostBrew?
@@ -250,13 +255,43 @@ GhostBrew automatically detects which CCD has V-Cache and routes tasks according
 
 ## Benchmarks
 
-> **Coming Soon** — Benchmarks comparing GhostBrew vs scx_lavd vs BORE
+See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed benchmark methodology and results.
 
-Planned tests:
+**Quick Stats (AMD Ryzen 9 7950X3D):**
+
+| Metric | Value |
+|--------|-------|
+| CCD Locality | 79.3% |
+| Direct Dispatch | 73.8% |
+| SMT Idle Picks | 47.9% |
+| Prefcore Usage | 52.4% |
+
+Planned comparisons:
+- GhostBrew vs scx_lavd vs BORE
 - Game frame times (1% lows, 0.1% lows)
-- Input latency
-- Compile times (parallel builds)
-- Mixed workload (gaming + streaming)
+- Mixed workload (gaming + compiling)
+
+---
+
+## Hardware Testing
+
+GhostBrew is actively tested on the following hardware:
+
+| System | CPU | GPU | Purpose |
+|--------|-----|-----|---------|
+| Primary Dev | AMD Ryzen 9 9950X3D | RTX 5090 | Daily development, Zen5 X3D testing |
+| CI Runner (VM) | Intel Core i9-14900K | RTX 3070 | Intel hybrid P-core/E-core testing |
+
+Previously tested on AMD Ryzen 9 7950X3D (Zen4 X3D).
+
+**Self-hosted Actions Runner:**
+- Intel 14900K (8 P-cores + 16 E-cores) with cpu passthrough
+- Validates Intel hybrid detection and E-core offload modes
+- Runs build, test, and smoke test workflows
+
+**Local Testing:**
+- AMD X3D systems test V-Cache CCD affinity, ghost-vcache integration, and prefcore scheduling
+- Both Zen4 (7950X3D) and Zen5 (9950X3D) architectures covered
 
 ---
 
@@ -266,23 +301,36 @@ Planned tests:
 
 | CPU | V-Cache Aware | Tested |
 |-----|:-------------:|:------:|
-| AMD Ryzen 9 9950X3D | Yes | WIP |
-| AMD Ryzen 9 9900X3D | Yes | WIP |
-| AMD Ryzen 9 7950X3D | Yes | WIP |
-| AMD Ryzen 9 7900X3D | Yes | WIP |
-| AMD Ryzen 7 7800X3D | Yes | WIP |
-| AMD Ryzen 9 9950X | No (Zen5 opts only) | WIP |
-| AMD Ryzen 9 9900X | No (Zen5 opts only) | WIP |
-| Other Zen4/Zen5 | No (generic sched-ext) | WIP |
+| AMD Ryzen 9 9950X3D | Yes | Pending |
+| AMD Ryzen 9 9900X3D | Yes | — |
+| AMD Ryzen 9 7950X3D | Yes | **Yes** |
+| AMD Ryzen 9 7900X3D | Yes | — |
+| AMD Ryzen 7 9800X3D | Yes | — |
+| AMD Ryzen 7 7800X3D | Yes | — |
+| Intel Core i9-14900K | Hybrid (P/E) | CI |
+| Intel Core i7-14700K | Hybrid (P/E) | — |
+| Intel Core 12th/13th Gen | Hybrid (P/E) | — |
+| AMD Ryzen 9 9950X | No (Zen5 opts only) | — |
+| Other Zen4/Zen5 | No (generic sched-ext) | — |
 
 ### Supported Kernels
 
-- **linux-ghost** (recommended)
-- linux-cachyos (6.12+)
-- linux-zen (6.12+)
-- Mainline Linux (6.12+)
+| Kernel | sched-ext | Recommended | Notes |
+|--------|:---------:|:-----------:|-------|
+| **linux-cachyos** | Yes | **Yes** | Best for most users, optimized for desktop/gaming |
+| **linux-cachyos-lto** | Yes | **Yes** | LTO optimized, slightly better performance |
+| **linux-ghost** | Yes | Yes | Custom kernel with ghost-vcache integration |
+| linux-zen | Yes | — | 6.12+ required |
+| Mainline | Yes | — | 6.12+ required |
 
-Requires `CONFIG_SCHED_CLASS_EXT=y`
+**CachyOS Users:**
+```bash
+# Already have sched-ext support, just install and run:
+sudo pacman -S scx-ghostbrew  # (when available in repos)
+# or build from source
+```
+
+Requires `CONFIG_SCHED_CLASS_EXT=y` (enabled by default in CachyOS kernels)
 
 ---
 

@@ -7,19 +7,88 @@ This guide covers performance tuning for scx_ghostbrew across different workload
 ```
 scx_ghostbrew [OPTIONS]
 
-Core Options:
+Mode Selection:
+    -g, --gaming          Gaming mode - prefer V-Cache CCD for latency-sensitive tasks
+    -w, --work            Work mode - prefer frequency CCD for higher boost
+    -a, --auto            Auto-detect workload and adjust (default)
+
+Tuning:
+    --burst-threshold     Burst detection threshold in nanoseconds (default: 2000000)
+    --slice-ns            Time slice in nanoseconds (default: 3000000)
+    --ecore-offload       E-core offload mode for Intel: disabled, conservative, aggressive
+
+Output:
+    -s, --stats           Print scheduler statistics periodically
+    --stats-interval      Statistics interval in seconds (default: 2)
+    -b, --benchmark       Benchmark mode - export stats to MangoHud-compatible CSV
     -v, --verbose         Enable verbose logging
-    -s, --stats-interval  Statistics interval in seconds (default: 2)
+    -d, --debug           Enable debug logging (very verbose)
 
-Gaming Options:
-    --gaming-boost        Extra priority boost for gaming tasks
-    --vcache-gaming       Force gaming tasks to V-Cache CCD (X3D only)
+Other:
+    --completions         Generate shell completions (bash, zsh, fish, powershell)
+```
 
-Advanced Options:
-    --slice-ns            Base time slice in nanoseconds (default: 20000000)
-    --no-gaming           Disable gaming detection
-    --no-containers       Disable container detection
-    --no-vms              Disable VM detection
+## Runtime Tuning
+
+GhostBrew supports runtime tuning without restarting the scheduler.
+
+### Control File Interface
+
+Write commands to `/run/ghostbrew/control` to update tunables at runtime:
+
+```bash
+# Set burst threshold (nanoseconds)
+echo "burst_threshold_ns=1500000" > /run/ghostbrew/control
+
+# Set time slice (nanoseconds)
+echo "slice_ns=2500000" > /run/ghostbrew/control
+
+# Enable/disable gaming mode
+echo "gaming_mode=true" > /run/ghostbrew/control
+
+# Enable/disable work mode
+echo "work_mode=true" > /run/ghostbrew/control
+```
+
+Multiple commands can be written at once:
+
+```bash
+cat > /run/ghostbrew/control << 'EOF'
+burst_threshold_ns=1000000
+slice_ns=2500000
+gaming_mode=true
+EOF
+```
+
+### Game Profiles
+
+Game-specific tunables are automatically applied when a game is detected:
+
+```bash
+# Create a custom profile
+mkdir -p ~/.config/ghostbrew/profiles
+cat > ~/.config/ghostbrew/profiles/mygame.toml << 'EOF'
+name = "My Game"
+exe_name = "mygame.exe"
+
+[tunables]
+burst_threshold_ns = 1500000
+slice_ns = 2500000
+EOF
+```
+
+When ghostbrew detects `mygame.exe` running, it will automatically apply these tunables.
+
+### V-Cache Integration
+
+If using [ghost-vcache](https://github.com/ghostkellz/ghost-vcache), mode changes are automatically reflected in the scheduler:
+
+```bash
+# Switch to cache mode (for gaming)
+ghost-vcache cache
+
+# Switch to frequency mode (for productivity)
+ghost-vcache frequency
 ```
 
 ## Workload Profiles
@@ -29,20 +98,21 @@ Advanced Options:
 For optimal gaming performance:
 
 ```bash
-sudo scx_ghostbrew --gaming-boost --vcache-gaming -v
+sudo scx_ghostbrew -g -s
 ```
 
 What this does:
 - Prioritizes gaming tasks (Wine/Proton) above all others
 - Routes gaming tasks to V-Cache CCD on X3D processors
 - Reduces scheduling latency for game threads
+- Shows real-time stats
 
 ### Mixed Gaming + Streaming
 
 When gaming while streaming or recording:
 
 ```bash
-sudo scx_ghostbrew --gaming-boost
+sudo scx_ghostbrew -g
 ```
 
 This balances:

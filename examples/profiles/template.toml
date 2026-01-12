@@ -1,0 +1,49 @@
+# GhostBrew Game Profile Template
+# Copy this file and customize for your game
+# Place in /etc/ghostbrew/profiles/ or ~/.config/ghostbrew/profiles/
+
+# Profile name (required)
+name = "My Game"
+
+# === PROCESS MATCHING ===
+# At least one of these should be set
+
+# Match by executable name (case-insensitive, without path)
+exe_name = "mygame.exe"
+
+# Match by Steam App ID (find at store.steampowered.com/app/XXXXX)
+# steam_appid = 123456
+
+# Match by process comm pattern (advanced)
+# comm_pattern = "mygame"
+
+# === V-CACHE PREFERENCE (AMD X3D only) ===
+# - "auto": Let scheduler decide based on workload
+# - "cache": Force V-Cache CCD (best for most games)
+# - "frequency": Force high-frequency CCD (rare, for specific workloads)
+vcache_preference = "cache"
+
+# === SMT PREFERENCE ===
+# - "auto": Let scheduler decide
+# - "prefer_idle": Prefer CPUs with idle SMT sibling (lower latency)
+# - "allow_shared": Allow shared physical cores (higher throughput)
+smt_preference = "prefer_idle"
+
+# === SCHEDULING TUNABLES ===
+[tunables]
+
+# Burst detection threshold (nanoseconds)
+# Lower = more tasks classified as interactive
+# Competitive FPS: 1000000 (1ms)
+# Action games: 1500000 (1.5ms)
+# Default: 2000000 (2ms)
+burst_threshold_ns = 1500000
+
+# Time slice duration (nanoseconds)
+# Lower = more responsive, higher context switch overhead
+# Competitive: 2000000 (2ms)
+# Default: 3000000 (3ms)
+slice_ns = 2500000
+
+# Priority boost for main game thread (optional)
+# priority_boost = 0

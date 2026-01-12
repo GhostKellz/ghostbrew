@@ -1,0 +1,24 @@
+# GhostBrew Workload Profile - DaVinci Resolve
+#
+# Professional video editing and color grading.
+# Mix of interactive UI and heavy batch rendering.
+#
+# Install: cp davinci-resolve.toml ~/.config/ghostbrew/profiles/
+
+name = "DaVinci Resolve"
+
+# Match by executable name
+exe_name = "resolve"
+
+# Cache helps with timeline scrubbing
+vcache_preference = "cache"
+
+# Allow shared SMT for render throughput
+smt_preference = "allow_shared"
+
+[tunables]
+# Moderate threshold - UI needs responsiveness
+burst_threshold_ns = 2000000  # 2ms
+
+# Longer slice for render jobs
+slice_ns = 4000000  # 4ms

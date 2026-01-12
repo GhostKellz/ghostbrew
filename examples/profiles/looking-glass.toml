@@ -1,0 +1,27 @@
+# GhostBrew Workload Profile - Looking Glass
+#
+# Looking Glass client for GPU passthrough VMs.
+# Ultra-low latency frame capture from IVSHMEM.
+#
+# Install: cp looking-glass.toml ~/.config/ghostbrew/profiles/
+
+name = "Looking Glass"
+
+# Match by executable name
+exe_name = "looking-glass-client"
+
+# Alternative
+comm_pattern = "looking-glass"
+
+# Low latency frame display
+vcache_preference = "cache"
+
+# Absolutely prefer idle cores
+smt_preference = "prefer_idle"
+
+[tunables]
+# Very aggressive for near-native latency
+burst_threshold_ns = 500000  # 0.5ms
+
+# Short slice
+slice_ns = 2000000  # 2ms

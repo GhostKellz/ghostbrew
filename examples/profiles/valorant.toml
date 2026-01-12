@@ -1,0 +1,28 @@
+# GhostBrew Game Profile - Valorant
+#
+# Competitive FPS - prioritize lowest possible input latency.
+# Valorant is more CPU-frequency bound than cache-bound,
+# but consistent frame pacing matters for competitive play.
+#
+# Install: cp valorant.toml ~/.config/ghostbrew/profiles/
+
+name = "Valorant"
+
+# Match by executable name
+exe_name = "VALORANT-Win64-Shipping.exe"
+
+# Not on Steam - match by exe only
+# steam_appid = 0
+
+# Competitive: prefer V-Cache for consistent latency
+vcache_preference = "cache"
+
+# Absolutely prefer idle cores to minimize latency
+smt_preference = "prefer_idle"
+
+[tunables]
+# Very aggressive burst threshold for competitive
+burst_threshold_ns = 500000  # 0.5ms
+
+# Short slice for responsiveness
+slice_ns = 2000000  # 2ms

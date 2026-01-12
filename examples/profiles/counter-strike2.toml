@@ -1,0 +1,14 @@
+# GhostBrew Game Profile: Counter-Strike 2
+# Optimized for competitive FPS (minimum latency)
+
+name = "Counter-Strike 2"
+exe_name = "cs2"
+steam_appid = 730
+
+vcache_preference = "cache"
+smt_preference = "prefer_idle"
+
+[tunables]
+# Aggressive latency tuning for competitive FPS
+burst_threshold_ns = 1000000  # 1ms - very aggressive
+slice_ns = 2000000            # 2ms - short slices

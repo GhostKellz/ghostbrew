@@ -2,7 +2,7 @@
 //
 // GhostBrew - Gaming Process Detection
 //
-// Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
+// Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
 use anyhow::Result;
 use log::{debug, info};
@@ -256,6 +256,27 @@ impl Default for GamingDetector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Get the executable name for a PID (for profile matching)
+pub fn get_exe_name(pid: u32) -> Option<String> {
+    let exe_path = format!("/proc/{}/exe", pid);
+    if let Ok(exe) = fs::read_link(&exe_path)
+        && let Some(name) = exe.file_name()
+    {
+        return Some(name.to_string_lossy().to_string());
+    }
+
+    // Fallback to comm
+    let comm_path = format!("/proc/{}/comm", pid);
+    if let Ok(comm) = fs::read_to_string(&comm_path) {
+        let comm = comm.trim();
+        if !comm.is_empty() {
+            return Some(comm.to_string());
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

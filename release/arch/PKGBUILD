@@ -1,27 +1,29 @@
 # Maintainer: ghostkellz <ckelley@ghostkellz.sh>
-# GhostBrew - sched-ext BPF scheduler for AMD Zen5/X3D
+# GhostBrew - sched-ext BPF scheduler for AMD Zen5/X3D and Intel Hybrid
 
 pkgname=scx-ghostbrew
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc="sched-ext BPF scheduler optimized for AMD Zen5/X3D processors"
+pkgdesc="sched-ext BPF scheduler for AMD Zen5/X3D (V-Cache aware) and Intel 12th-14th gen hybrid (P-core/E-core)"
 arch=('x86_64')
 url="https://github.com/ghostkellz/ghostbrew"
-license=('MIT')
+license=('GPL-2.0-only')
 depends=(
   'libbpf'
+  'bpf'
 )
 makedepends=(
   'rust'
   'cargo'
   'clang'
   'llvm'
-  'bpf-linker'
   'git'
 )
 optdepends=(
-  'linux-ghost: Recommended kernel with sched-ext support'
-  'linux-cachyos: Alternative kernel with sched-ext support'
+  'linux-cachyos: Recommended kernel with sched-ext (6.12+)'
+  'linux-cachyos-lto: LTO optimized kernel with sched-ext'
+  'linux-ghost: Custom kernel with ghost-vcache support'
+  'scx-scheds: Other sched-ext schedulers for comparison'
 )
 provides=('scx_ghostbrew')
 conflicts=('scx_ghostbrew')
@@ -53,11 +55,34 @@ package() {
   # Systemd service
   install -Dm644 "scx-ghostbrew.service" "${pkgdir}/usr/lib/systemd/system/scx-ghostbrew.service"
 
+  # Man page
+  install -Dm644 "man/scx_ghostbrew.1" "${pkgdir}/usr/share/man/man1/scx_ghostbrew.1"
+
   # Documentation
   install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 "CHANGELOG.md" "${pkgdir}/usr/share/doc/${pkgname}/CHANGELOG.md"
   install -Dm644 "docs/ARCHITECTURE.md" "${pkgdir}/usr/share/doc/${pkgname}/ARCHITECTURE.md"
   install -Dm644 "docs/TUNING.md" "${pkgdir}/usr/share/doc/${pkgname}/TUNING.md"
-  install -Dm644 "docs/CHANGELOG.md" "${pkgdir}/usr/share/doc/${pkgname}/CHANGELOG.md"
+  install -Dm644 "docs/BENCHMARKS.md" "${pkgdir}/usr/share/doc/${pkgname}/BENCHMARKS.md"
+  install -Dm644 "docs/TROUBLESHOOTING.md" "${pkgdir}/usr/share/doc/${pkgname}/TROUBLESHOOTING.md"
+
+  # Example config
+  install -Dm644 "examples/config/ghostbrew.toml" "${pkgdir}/usr/share/doc/${pkgname}/examples/config/ghostbrew.toml"
+
+  # Example profiles
+  install -dm755 "${pkgdir}/usr/share/doc/${pkgname}/examples/profiles"
+  install -Dm644 examples/profiles/*.toml -t "${pkgdir}/usr/share/doc/${pkgname}/examples/profiles/"
+
+  # Create config directories
+  install -dm755 "${pkgdir}/etc/ghostbrew/profiles"
+
+  # Shell completions
+  install -dm755 "${pkgdir}/usr/share/bash-completion/completions"
+  install -dm755 "${pkgdir}/usr/share/zsh/site-functions"
+  install -dm755 "${pkgdir}/usr/share/fish/vendor_completions.d"
+  "./target/release/scx_ghostbrew" --completions bash > "${pkgdir}/usr/share/bash-completion/completions/scx_ghostbrew"
+  "./target/release/scx_ghostbrew" --completions zsh > "${pkgdir}/usr/share/zsh/site-functions/_scx_ghostbrew"
+  "./target/release/scx_ghostbrew" --completions fish > "${pkgdir}/usr/share/fish/vendor_completions.d/scx_ghostbrew.fish"
 
   # License
   install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"

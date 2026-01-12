@@ -1,0 +1,14 @@
+# GhostBrew Game Profile: Path of Exile 2
+# Optimized for ARPG with many entities
+
+name = "Path of Exile 2"
+exe_name = "PathOfExile.exe"
+steam_appid = 2694490
+
+vcache_preference = "cache"
+smt_preference = "auto"
+
+[tunables]
+# Slightly relaxed for ARPG with many effects
+burst_threshold_ns = 1800000
+slice_ns = 2800000

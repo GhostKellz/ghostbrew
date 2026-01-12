@@ -1,0 +1,27 @@
+# GhostBrew Workload Profile - OBS Studio
+#
+# Streaming and recording with OBS requires consistent frame pacing
+# and low-latency encoding. Prioritize encoder threads.
+#
+# Install: cp obs-studio.toml ~/.config/ghostbrew/profiles/
+
+name = "OBS Studio"
+
+# Match by executable name
+exe_name = "obs"
+
+# Alternative patterns
+comm_pattern = "obs"
+
+# Streaming benefits from consistent scheduling
+vcache_preference = "cache"
+
+# Prefer idle cores for encoding threads
+smt_preference = "prefer_idle"
+
+[tunables]
+# Moderate burst threshold - encoding is bursty
+burst_threshold_ns = 1500000  # 1.5ms
+
+# Standard slice
+slice_ns = 3000000  # 3ms

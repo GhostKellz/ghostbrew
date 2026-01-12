@@ -1,0 +1,24 @@
+# GhostBrew Workload Profile - Sunshine (Game Streaming Host)
+#
+# Sunshine is a self-hosted game streaming server (Moonlight-compatible).
+# Low latency capture and encoding is critical.
+#
+# Install: cp sunshine.toml ~/.config/ghostbrew/profiles/
+
+name = "Sunshine"
+
+# Match by executable name
+exe_name = "sunshine"
+
+# Streaming server needs consistent latency
+vcache_preference = "cache"
+
+# Absolutely prefer idle cores for capture/encode
+smt_preference = "prefer_idle"
+
+[tunables]
+# Aggressive burst threshold for low latency streaming
+burst_threshold_ns = 1000000  # 1ms
+
+# Short slice for responsiveness
+slice_ns = 2000000  # 2ms

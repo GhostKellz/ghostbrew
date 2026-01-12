@@ -1,0 +1,36 @@
+# GhostBrew Configuration - AI/ML Workload Mode
+#
+# Optimized for LLM inference (Ollama, llama.cpp) and ML training.
+# Maximizes throughput for batch compute while keeping UI responsive.
+#
+# Install: cp ai-workload.toml /etc/ghostbrew/config.toml
+
+[defaults]
+# Relaxed burst threshold - batch focused
+burst_threshold_ns = 5000000  # 5ms
+
+# Long slice for compute efficiency
+slice_ns = 6000000  # 6ms
+
+# Work mode
+gaming_mode = false
+
+# Less frequent stats
+stats_interval = 10
+
+[amd]
+# Frequency mode for higher boost on compute
+prefer_vcache = false
+
+# Enable Prefcore for hot threads
+prefcore_enabled = true
+
+# Manual control
+vcache_switching = "manual"
+
+[intel]
+# Use all cores - P for hot threads, E for batch
+prefer_pcores = false
+
+# Aggressive E-core usage for parallelism
+ecore_offload = "aggressive"

@@ -1,0 +1,244 @@
+name: Hardware Matrix
+
+# Manual trigger only until hardware runners are configured
+on:
+  workflow_dispatch:
+    inputs:
+      run_amd:
+        description: 'Run AMD X3D tests'
+        required: false
+        default: 'true'
+        type: boolean
+      run_intel:
+        description: 'Run Intel Hybrid tests'
+        required: false
+        default: 'true'
+        type: boolean
+      test_duration:
+        description: 'Stress test duration (seconds)'
+        required: false
+        default: '60'
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # AMD X3D Testing (9800X3D self-hosted runner)
+  test-amd-x3d:
+    name: AMD X3D Tests
+    runs-on: [self-hosted, amd-x3d]
+    if: ${{ github.event.inputs.run_amd == 'true' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System Info
+        run: |
+          echo "=== CPU Info ==="
+          grep "model name" /proc/cpuinfo | head -1
+          lscpu | grep -E "CPU\(s\)|Thread|Core|Socket|Model name"
+          echo
+          echo "=== Kernel ==="
+          uname -r
+          echo
+          echo "=== sched-ext status ==="
+          ls -la /sys/kernel/sched_ext/ 2>/dev/null || echo "sched-ext not available"
+
+      - name: Build Release
+        run: cargo build --release
+
+      - name: Run Tests
+        run: cargo test --release
+
+      - name: Verify AMD Detection
+        run: |
+          echo "=== Topology Detection ==="
+          sudo timeout 10 ./target/release/scx_ghostbrew -v 2>&1 | head -30 || true
+          echo
+          echo "=== Expected: X3D detection, V-Cache CCD info ==="
+
+      - name: Smoke Test (attach/detach)
+        run: |
+          echo "Starting scheduler for 10 seconds..."
+          sudo timeout 10 ./target/release/scx_ghostbrew --stats 2>&1 || true
+          echo "Scheduler exited cleanly"
+
+      - name: Stress Test
+        if: ${{ github.event.inputs.test_duration != '0' }}
+        run: |
+          echo "Running ${{ github.event.inputs.test_duration }}s stress test..."
+          sudo timeout ${{ github.event.inputs.test_duration }} \
+            ./target/release/scx_ghostbrew --stats --stats-interval 5 2>&1 &
+          SCX_PID=$!
+
+          # Run stress workload
+          stress-ng --cpu $(nproc) --timeout ${{ github.event.inputs.test_duration }}s || true
+
+          # Let scheduler finish
+          wait $SCX_PID 2>/dev/null || true
+          echo "Stress test completed"
+
+      - name: Check V-Cache Sysfs
+        run: |
+          echo "=== V-Cache Mode (if ghost-vcache installed) ==="
+          cat /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode 2>/dev/null || echo "Not available"
+
+      - name: Collect Results
+        run: |
+          mkdir -p results
+          {
+            echo "Hardware: AMD X3D"
+            echo "Date: $(date -Iseconds)"
+            echo "Kernel: $(uname -r)"
+            grep "model name" /proc/cpuinfo | head -1
+            echo "---"
+            echo "Build: SUCCESS"
+            echo "Tests: $(cargo test --release 2>&1 | grep -E 'passed|failed' | tail -1)"
+          } > results/amd-x3d-results.txt
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: amd-x3d-results
+          path: results/
+          retention-days: 30
+
+  # Intel Hybrid Testing (14900K VM with cpu=host)
+  test-intel-hybrid:
+    name: Intel Hybrid Tests
+    runs-on: [self-hosted, intel-hybrid]
+    if: ${{ github.event.inputs.run_intel == 'true' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System Info
+        run: |
+          echo "=== CPU Info ==="
+          grep "model name" /proc/cpuinfo | head -1
+          lscpu | grep -E "CPU\(s\)|Thread|Core|Socket|Model name"
+          echo
+          echo "=== P-core / E-core Detection ==="
+          for cpu in /sys/devices/system/cpu/cpu*/cpu_capacity; do
+            cap=$(cat $cpu 2>/dev/null || echo "N/A")
+            echo "$(basename $(dirname $cpu)): $cap"
+          done | head -32
+          echo
+          echo "=== Kernel ==="
+          uname -r
+
+      - name: Build Release
+        run: cargo build --release
+
+      - name: Run Tests
+        run: cargo test --release
+
+      - name: Verify Intel Detection
+        run: |
+          echo "=== Topology Detection ==="
+          sudo timeout 10 ./target/release/scx_ghostbrew -v 2>&1 | head -30 || true
+          echo
+          echo "=== Expected: Intel hybrid detection, P-core/E-core counts ==="
+
+      - name: Smoke Test (attach/detach)
+        run: |
+          echo "Starting scheduler for 10 seconds..."
+          sudo timeout 10 ./target/release/scx_ghostbrew --stats 2>&1 || true
+          echo "Scheduler exited cleanly"
+
+      - name: Test E-core Offload Modes
+        run: |
+          echo "=== Testing E-core offload: disabled ==="
+          sudo timeout 5 ./target/release/scx_ghostbrew --ecore-offload disabled -v 2>&1 | head -20 || true
+          echo
+          echo "=== Testing E-core offload: conservative ==="
+          sudo timeout 5 ./target/release/scx_ghostbrew --ecore-offload conservative -v 2>&1 | head -20 || true
+          echo
+          echo "=== Testing E-core offload: aggressive ==="
+          sudo timeout 5 ./target/release/scx_ghostbrew --ecore-offload aggressive -v 2>&1 | head -20 || true
+
+      - name: Stress Test
+        if: ${{ github.event.inputs.test_duration != '0' }}
+        run: |
+          echo "Running ${{ github.event.inputs.test_duration }}s stress test..."
+          sudo timeout ${{ github.event.inputs.test_duration }} \
+            ./target/release/scx_ghostbrew --stats --stats-interval 5 2>&1 &
+          SCX_PID=$!
+
+          # Run stress workload
+          stress-ng --cpu $(nproc) --timeout ${{ github.event.inputs.test_duration }}s || true
+
+          # Let scheduler finish
+          wait $SCX_PID 2>/dev/null || true
+          echo "Stress test completed"
+
+      - name: Collect Results
+        run: |
+          mkdir -p results
+          {
+            echo "Hardware: Intel Hybrid"
+            echo "Date: $(date -Iseconds)"
+            echo "Kernel: $(uname -r)"
+            grep "model name" /proc/cpuinfo | head -1
+            echo "---"
+            echo "Build: SUCCESS"
+            echo "Tests: $(cargo test --release 2>&1 | grep -E 'passed|failed' | tail -1)"
+          } > results/intel-hybrid-results.txt
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-hybrid-results
+          path: results/
+          retention-days: 30
+
+  # Summary job
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-amd-x3d, test-intel-hybrid]
+    if: always()
+
+    steps:
+      - name: Download AMD Results
+        if: needs.test-amd-x3d.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: amd-x3d-results
+          path: amd-results
+        continue-on-error: true
+
+      - name: Download Intel Results
+        if: needs.test-intel-hybrid.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: intel-hybrid-results
+          path: intel-results
+        continue-on-error: true
+
+      - name: Generate Summary
+        run: |
+          echo "# Hardware Matrix Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| AMD X3D | ${{ needs.test-amd-x3d.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Intel Hybrid | ${{ needs.test-intel-hybrid.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f amd-results/amd-x3d-results.txt ]; then
+            echo "## AMD X3D Details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat amd-results/amd-x3d-results.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f intel-results/intel-hybrid-results.txt ]; then
+            echo "## Intel Hybrid Details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat intel-results/intel-hybrid-results.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi

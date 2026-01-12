@@ -1,0 +1,14 @@
+# GhostBrew Game Profile: World of Warcraft
+# Battle.net - optimized for MMO
+
+name = "World of Warcraft"
+exe_name = "Wow.exe"
+comm_pattern = "wow"
+
+vcache_preference = "cache"
+smt_preference = "auto"
+
+[tunables]
+# MMO - balanced settings
+burst_threshold_ns = 2000000
+slice_ns = 3000000

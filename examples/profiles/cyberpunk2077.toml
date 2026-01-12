@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Cyberpunk 2077
+#
+# Cyberpunk 2077 is heavily cache-dependent and sees major
+# improvements on X3D processors.
+#
+# Install: cp cyberpunk2077.toml ~/.config/ghostbrew/profiles/
+
+name = "Cyberpunk 2077"
+
+# Match by executable name
+exe_name = "Cyberpunk2077.exe"
+
+# Steam App ID
+steam_appid = 1091500
+
+# Maximum V-Cache preference
+vcache_preference = "cache"
+
+# Prefer idle SMT siblings for consistent frame times
+smt_preference = "prefer_idle"
+
+[tunables]
+# Aggressive burst threshold for smoother frames
+burst_threshold_ns = 1000000  # 1ms
+
+# Slightly shorter slice for responsiveness
+slice_ns = 2500000  # 2.5ms

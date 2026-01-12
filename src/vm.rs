@@ -2,7 +2,7 @@
 //
 // GhostBrew - KVM/QEMU Virtualization Support
 //
-// Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
+// Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
 use anyhow::Result;
 use log::{debug, info};

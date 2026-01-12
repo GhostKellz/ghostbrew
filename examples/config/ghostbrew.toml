@@ -1,0 +1,45 @@
+# GhostBrew Scheduler Configuration
+# Copy to /etc/ghostbrew/config.toml or ~/.config/ghostbrew/config.toml
+
+[defaults]
+# Burst detection threshold in nanoseconds
+# Lower = more tasks classified as interactive
+# Default: 2ms (2000000)
+burst_threshold_ns = 2000000
+
+# Time slice in nanoseconds
+# Lower = more responsive, higher = better throughput
+# Default: 3ms (3000000)
+slice_ns = 3000000
+
+# Enable gaming mode by default (prefer V-Cache/P-cores)
+gaming_mode = true
+
+# Statistics display interval in seconds
+stats_interval = 2
+
+[amd]
+# Prefer V-Cache CCD for gaming tasks (X3D processors)
+prefer_vcache = true
+
+# Enable AMD Prefcore integration (use best cores for latency-sensitive tasks)
+prefcore_enabled = true
+
+# V-Cache switching strategy:
+# - "manual": User controls via ghost-vcache CLI
+# - "automatic": GhostBrew switches based on workload detection
+# - "follow_ghost_vcache": React to ghost-vcache mode changes (default)
+vcache_switching = "follow_ghost_vcache"
+
+[intel]
+# Prefer P-cores for gaming/interactive tasks (12th-14th gen hybrid)
+prefer_pcores = true
+
+# E-core offload mode for batch tasks:
+# - "disabled": Never offload to E-cores
+# - "conservative": Only explicitly marked batch tasks (default)
+# - "aggressive": All non-gaming/non-interactive tasks
+ecore_offload = "conservative"
+
+# Optional: Path to per-game profiles directory
+# profiles_dir = "/etc/ghostbrew/profiles"

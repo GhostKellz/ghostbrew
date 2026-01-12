@@ -1,0 +1,13 @@
+# GhostBrew Game Profile: Arc Raiders
+# Optimized for extraction shooter
+
+name = "Arc Raiders"
+exe_name = "ArcRaiders.exe"
+steam_appid = 1891700
+
+vcache_preference = "cache"
+smt_preference = "prefer_idle"
+
+[tunables]
+burst_threshold_ns = 1500000
+slice_ns = 2500000

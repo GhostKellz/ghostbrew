@@ -1,0 +1,13 @@
+# GhostBrew Game Profile: Helldivers 2
+# Optimized for co-op action shooter
+
+name = "Helldivers 2"
+exe_name = "helldivers2.exe"
+steam_appid = 553850
+
+vcache_preference = "cache"
+smt_preference = "prefer_idle"
+
+[tunables]
+burst_threshold_ns = 1500000
+slice_ns = 2500000

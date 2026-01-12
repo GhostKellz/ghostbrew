@@ -1,0 +1,25 @@
+# GhostBrew Game Profile - EVE Online
+#
+# EVE Online is a CPU-bound MMO that benefits from V-Cache
+# and consistent scheduling for fleet combat.
+#
+# Install: cp eve-online.toml ~/.config/ghostbrew/profiles/
+
+name = "EVE Online"
+
+# Match by executable name (Wine/Proton)
+exe_name = "exefile.exe"
+
+# V-Cache preference - EVE benefits from cache
+vcache_preference = "cache"
+
+# SMT preference - prefer idle siblings to avoid contention
+smt_preference = "prefer_idle"
+
+[tunables]
+# Lower burst threshold for more responsive scheduling
+# EVE has many small network/UI updates
+burst_threshold_ns = 1500000  # 1.5ms (default 2ms)
+
+# Standard time slice
+slice_ns = 3000000  # 3ms

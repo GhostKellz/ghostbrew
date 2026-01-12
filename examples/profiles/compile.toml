@@ -1,0 +1,25 @@
+# GhostBrew Workload Profile - Compilation
+#
+# Kernel/software compilation workloads.
+# Pure batch throughput, keep desktop responsive.
+#
+# Install: cp compile.toml ~/.config/ghostbrew/profiles/
+
+name = "Compilation"
+
+# Match common compilers
+exe_name = "cc1plus"
+comm_pattern = "rustc"
+
+# Frequency mode for maximum throughput
+vcache_preference = "frequency"
+
+# Use all SMT threads
+smt_preference = "allow_shared"
+
+[tunables]
+# Very relaxed - batch workload
+burst_threshold_ns = 10000000  # 10ms
+
+# Long slice for efficiency
+slice_ns = 6000000  # 6ms

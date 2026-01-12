@@ -2,7 +2,7 @@
 //
 // GhostBrew - NVIDIA GPU Integration
 //
-// Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
+// Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
 use anyhow::{Context, Result};
 use log::{debug, info};

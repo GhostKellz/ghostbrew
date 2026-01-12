@@ -1,0 +1,36 @@
+# GhostBrew Configuration - VM Gaming Mode
+#
+# Optimized for GPU passthrough gaming VMs.
+# Prioritizes VM vCPU threads and Looking Glass client.
+#
+# Install: cp vm-gaming.toml /etc/ghostbrew/config.toml
+
+[defaults]
+# Aggressive burst threshold for VM responsiveness
+burst_threshold_ns = 1000000  # 1ms
+
+# Short slice for low latency
+slice_ns = 2000000  # 2ms
+
+# Gaming mode for VM threads
+gaming_mode = true
+
+# Frequent stats
+stats_interval = 2
+
+[amd]
+# V-Cache for Looking Glass and VM
+prefer_vcache = true
+
+# Enable Prefcore
+prefcore_enabled = true
+
+# Follow ghost-vcache
+vcache_switching = "follow_ghost_vcache"
+
+[intel]
+# P-cores only for VM
+prefer_pcores = true
+
+# Disable E-core offload for VMs
+ecore_offload = "disabled"

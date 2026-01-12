@@ -1,0 +1,159 @@
+.TH SCX_GHOSTBREW 1 "December 2025" "GhostBrew 0.1.0" "User Commands"
+.SH NAME
+scx_ghostbrew \- sched-ext BPF scheduler for AMD Zen5/X3D and Intel Hybrid processors
+.SH SYNOPSIS
+.B scx_ghostbrew
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B scx_ghostbrew
+is a custom sched-ext BPF scheduler optimized for AMD Zen4/Zen5 X3D processors
+(with V-Cache awareness) and Intel 12th-14th gen hybrid processors (with P-core/E-core
+differentiation).
+.PP
+It combines BORE-inspired burst detection with hardware-aware scheduling to deliver
+optimal performance for gaming and desktop workloads.
+.SH OPTIONS
+.TP
+.BR \-g ", " \-\-gaming
+Gaming mode. Prefer V-Cache CCD on AMD X3D or P-cores on Intel hybrid for
+latency-sensitive tasks.
+.TP
+.BR \-p ", " \-\-productivity
+Productivity mode. Prefer frequency CCD on AMD or balanced core usage on Intel.
+.TP
+.BR \-a ", " \-\-auto\-mode
+Auto-detect workload and adjust scheduling (default).
+.TP
+.BR \-\-burst\-threshold =\fINS\fR
+Burst detection threshold in nanoseconds. Tasks with burst time below this
+are classified as interactive. Default: 2000000 (2ms).
+.TP
+.BR \-\-slice\-ns =\fINS\fR
+Time slice in nanoseconds. Lower values improve responsiveness at the cost
+of higher context switch overhead. Default: 3000000 (3ms).
+.TP
+.BR \-\-ecore\-offload =\fIMODE\fR
+E-core offload mode for Intel hybrid CPUs. Options:
+.RS
+.IP \fBdisabled\fR
+Never offload tasks to E-cores.
+.IP \fBconservative\fR
+Only offload explicitly marked batch tasks (default).
+.IP \fBaggressive\fR
+Offload all non-gaming/non-interactive tasks.
+.RE
+.TP
+.BR \-s ", " \-\-stats
+Print scheduler statistics periodically.
+.TP
+.BR \-\-stats\-interval =\fISECS\fR
+Statistics display interval in seconds. Default: 2.
+.TP
+.BR \-v ", " \-\-verbose
+Enable verbose logging (info level).
+.TP
+.BR \-d ", " \-\-debug
+Enable debug logging (very verbose).
+.TP
+.BR \-\-completions =\fISHELL\fR
+Generate shell completions for the specified shell (bash, zsh, fish, powershell).
+.TP
+.BR \-h ", " \-\-help
+Print help information.
+.TP
+.BR \-V ", " \-\-version
+Print version information.
+.SH AMD X3D SUPPORT
+On AMD X3D processors (7800X3D, 7900X3D, 7950X3D, 9800X3D, 9900X3D, 9950X3D),
+GhostBrew automatically detects which CCD has V-Cache and routes latency-sensitive
+tasks there.
+.PP
+V-Cache mode can be controlled via the ghost-vcache sysfs interface:
+.PP
+.RS
+.nf
+# Check current mode
+cat /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode
+
+# Set to cache mode (gaming)
+echo cache | sudo tee /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode
+
+# Set to frequency mode (productivity)
+echo frequency | sudo tee /sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode
+.fi
+.RE
+.SH INTEL HYBRID SUPPORT
+On Intel 12th-14th gen hybrid processors (e.g., i9-14900K), GhostBrew detects
+P-cores and E-cores using cpu_capacity sysfs values and routes tasks accordingly:
+.IP \(bu 2
+Gaming/interactive tasks are placed on P-cores
+.IP \(bu 2
+Batch/background tasks can be offloaded to E-cores (configurable)
+.SH CONFIGURATION
+Configuration files are loaded from (in order):
+.IP 1. 4
+/etc/ghostbrew/config.toml
+.IP 2. 4
+~/.config/ghostbrew/config.toml
+.PP
+Per-game profiles are loaded from:
+.IP 1. 4
+/etc/ghostbrew/profiles/
+.IP 2. 4
+~/.config/ghostbrew/profiles/
+.SH FILES
+.TP
+.I /etc/ghostbrew/config.toml
+System-wide configuration file.
+.TP
+.I ~/.config/ghostbrew/config.toml
+User configuration file.
+.TP
+.I /etc/ghostbrew/profiles/*.toml
+System-wide game profiles.
+.TP
+.I ~/.config/ghostbrew/profiles/*.toml
+User game profiles.
+.TP
+.I /sys/kernel/sched_ext/
+sched-ext kernel interface (must exist for scheduler to load).
+.SH EXAMPLES
+.TP
+Run in gaming mode with statistics:
+.B sudo scx_ghostbrew --gaming --stats
+.TP
+Run with custom burst threshold:
+.B sudo scx_ghostbrew --burst-threshold 1500000
+.TP
+Run on Intel with aggressive E-core offload:
+.B sudo scx_ghostbrew --ecore-offload aggressive
+.TP
+Generate zsh completions:
+.B scx_ghostbrew --completions zsh > _scx_ghostbrew
+.SH KERNEL REQUIREMENTS
+Requires a kernel with sched-ext support (CONFIG_SCHED_CLASS_EXT=y).
+Recommended kernels:
+.IP \(bu 2
+linux-cachyos (6.12+)
+.IP \(bu 2
+linux-cachyos-lto
+.IP \(bu 2
+linux-ghost
+.IP \(bu 2
+linux-zen (6.12+)
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Error (not root, sched-ext not available, BPF load failure)
+.SH SEE ALSO
+.BR bpftool (8),
+.BR perf (1)
+.PP
+Project: https://github.com/ghostkellz/ghostbrew
+.SH AUTHOR
+ghostkellz <ckelley@ghostkellz.sh>
+.SH LICENSE
+GPL-2.0-only

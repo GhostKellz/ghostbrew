@@ -1,0 +1,22 @@
+# GhostBrew Workload Profile - Kdenlive
+#
+# KDE video editor with MLT framework.
+# Timeline preview and rendering workloads.
+#
+# Install: cp kdenlive.toml ~/.config/ghostbrew/profiles/
+
+name = "Kdenlive"
+
+# Match by executable name
+exe_name = "kdenlive"
+
+# Cache helps with preview playback
+vcache_preference = "cache"
+
+# Allow shared for render throughput
+smt_preference = "allow_shared"
+
+[tunables]
+# Standard settings
+burst_threshold_ns = 2000000  # 2ms
+slice_ns = 3000000  # 3ms

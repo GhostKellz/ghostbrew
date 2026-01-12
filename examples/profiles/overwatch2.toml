@@ -1,0 +1,14 @@
+# GhostBrew Game Profile: Overwatch 2
+# Battle.net - optimized for competitive FPS
+
+name = "Overwatch 2"
+exe_name = "Overwatch.exe"
+comm_pattern = "overwatch"
+
+vcache_preference = "cache"
+smt_preference = "prefer_idle"
+
+[tunables]
+# Competitive FPS tuning
+burst_threshold_ns = 1200000
+slice_ns = 2200000

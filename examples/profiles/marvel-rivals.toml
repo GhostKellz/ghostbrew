@@ -1,0 +1,26 @@
+# GhostBrew Game Profile - Marvel Rivals
+#
+# Team-based hero shooter - benefits from low latency.
+#
+# Install: cp marvel-rivals.toml ~/.config/ghostbrew/profiles/
+
+name = "Marvel Rivals"
+
+# Match by executable name
+exe_name = "MarvelRivals.exe"
+
+# Steam App ID
+steam_appid = 2767030
+
+# Prefer V-Cache for consistent frame times
+vcache_preference = "cache"
+
+# Prefer idle cores for responsiveness
+smt_preference = "prefer_idle"
+
+[tunables]
+# Competitive burst threshold
+burst_threshold_ns = 1000000  # 1ms
+
+# Short slice for responsiveness
+slice_ns = 2500000  # 2.5ms

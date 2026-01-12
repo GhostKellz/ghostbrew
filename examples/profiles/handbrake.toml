@@ -1,0 +1,24 @@
+# GhostBrew Workload Profile - HandBrake
+#
+# Video transcoding - pure batch workload.
+# Maximize throughput, not latency.
+#
+# Install: cp handbrake.toml ~/.config/ghostbrew/profiles/
+
+name = "HandBrake"
+
+# Match by executable name
+exe_name = "ghb"
+
+# Frequency mode for higher clocks on batch work
+vcache_preference = "frequency"
+
+# Use all SMT threads for throughput
+smt_preference = "allow_shared"
+
+[tunables]
+# Relaxed threshold - not interactive
+burst_threshold_ns = 5000000  # 5ms
+
+# Long slice for throughput
+slice_ns = 6000000  # 6ms

@@ -1,0 +1,24 @@
+# GhostBrew Workload Profile - Blender
+#
+# 3D modeling, animation, and rendering.
+# Interactive viewport + heavy batch rendering.
+#
+# Install: cp blender.toml ~/.config/ghostbrew/profiles/
+
+name = "Blender"
+
+# Match by executable name
+exe_name = "blender"
+
+# Viewport benefits from cache
+vcache_preference = "cache"
+
+# Allow shared SMT for Cycles rendering
+smt_preference = "allow_shared"
+
+[tunables]
+# Moderate threshold for viewport interactivity
+burst_threshold_ns = 2000000  # 2ms
+
+# Longer slice for render jobs
+slice_ns = 4000000  # 4ms

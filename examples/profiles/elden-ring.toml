@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Elden Ring
+#
+# Elden Ring benefits significantly from V-Cache on X3D processors.
+# The open world and asset streaming are very cache-dependent.
+#
+# Install: cp elden-ring.toml ~/.config/ghostbrew/profiles/
+
+name = "Elden Ring"
+
+# Match by executable name
+exe_name = "eldenring.exe"
+
+# Steam App ID
+steam_appid = 1245620
+
+# Maximum V-Cache preference for open world streaming
+vcache_preference = "cache"
+
+# Prefer idle SMT siblings for consistent frame pacing
+smt_preference = "prefer_idle"
+
+[tunables]
+# Moderate burst threshold - Elden Ring has variable frame times
+burst_threshold_ns = 1500000  # 1.5ms
+
+# Default slice for balance
+slice_ns = 3000000  # 3ms

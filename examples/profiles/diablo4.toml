@@ -1,0 +1,13 @@
+# GhostBrew Game Profile: Diablo IV
+# Battle.net game - optimized for ARPG
+
+name = "Diablo IV"
+exe_name = "Diablo IV.exe"
+comm_pattern = "diablo"
+
+vcache_preference = "cache"
+smt_preference = "auto"
+
+[tunables]
+burst_threshold_ns = 1800000
+slice_ns = 2800000

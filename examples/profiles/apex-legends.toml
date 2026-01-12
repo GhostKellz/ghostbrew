@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Apex Legends
+#
+# Competitive Battle Royale - Source engine derivative.
+# Benefits from low latency scheduling.
+#
+# Install: cp apex-legends.toml ~/.config/ghostbrew/profiles/
+
+name = "Apex Legends"
+
+# Match by executable name
+exe_name = "r5apex.exe"
+
+# Steam App ID
+steam_appid = 1172470
+
+# Prefer V-Cache for consistency
+vcache_preference = "cache"
+
+# Prefer idle SMT for latency
+smt_preference = "prefer_idle"
+
+[tunables]
+# Competitive burst threshold
+burst_threshold_ns = 750000  # 0.75ms
+
+# Short slice for responsiveness
+slice_ns = 2000000  # 2ms

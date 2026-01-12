@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Satisfactory
+#
+# Factory builder with complex simulations.
+# Large factories benefit from V-Cache for simulation data.
+#
+# Install: cp satisfactory.toml ~/.config/ghostbrew/profiles/
+
+name = "Satisfactory"
+
+# Match by executable name
+exe_name = "FactoryGame-Win64-Shipping.exe"
+
+# Steam App ID
+steam_appid = 526870
+
+# Factory simulation is very cache-dependent
+vcache_preference = "cache"
+
+# Allow shared SMT for throughput (not latency-critical)
+smt_preference = "allow_shared"
+
+[tunables]
+# Relaxed burst threshold - not latency-critical
+burst_threshold_ns = 2500000  # 2.5ms
+
+# Longer slice for throughput
+slice_ns = 4000000  # 4ms

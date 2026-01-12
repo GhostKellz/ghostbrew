@@ -1,0 +1,36 @@
+# GhostBrew Configuration - Productivity Mode
+#
+# Optimized for development, office work, and general desktop use.
+# Prioritizes responsiveness while maximizing batch throughput.
+#
+# Install: cp productivity.toml /etc/ghostbrew/config.toml
+
+[defaults]
+# Higher burst threshold - focus on throughput
+burst_threshold_ns = 3000000  # 3ms
+
+# Longer slice for better throughput
+slice_ns = 4000000  # 4ms
+
+# Work mode by default
+gaming_mode = false
+
+# Stats every 5 seconds
+stats_interval = 5
+
+[amd]
+# Prefer frequency CCD for higher boost clocks
+prefer_vcache = false
+
+# Enable Prefcore for best cores on important tasks
+prefcore_enabled = true
+
+# Manual V-Cache control
+vcache_switching = "manual"
+
+[intel]
+# Use P-cores for interactive, E-cores for batch
+prefer_pcores = true
+
+# Aggressive E-core offload for background work
+ecore_offload = "aggressive"

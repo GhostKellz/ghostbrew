@@ -1,13 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0
 //
-// GhostBrew - CPU Topology Detection for AMD Zen processors
+// GhostBrew - CPU Topology Detection for AMD Zen and Intel Hybrid processors
 //
-// Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
+// Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
+use crate::intel::{self, IntelHybridInfo};
 use anyhow::{Context, Result};
 use log::debug;
 use std::fs;
 use std::path::Path;
+
+/// CPU architecture type
+#[derive(Debug, Clone, PartialEq)]
+pub enum CpuArch {
+    /// AMD Zen architecture (optionally with X3D V-Cache)
+    AmdZen {
+        is_x3d: bool,
+        /// Zen generation: 4 = Zen 4 (family 25), 5 = Zen 5 (family 26)
+        generation: u32,
+    },
+    /// Intel hybrid architecture (12th/13th/14th gen with P-cores and E-cores)
+    IntelHybrid { generation: u32 },
+    /// Generic x86-64 (no special optimizations)
+    Generic,
+}
 
 /// CPU topology information
 #[allow(dead_code)]
@@ -22,6 +38,21 @@ pub struct CpuTopology {
     pub smt_enabled: bool,
     pub is_x3d: bool,
     pub model_name: String,
+    // Intel hybrid support
+    pub arch: CpuArch,
+    pub is_intel_hybrid: bool,
+    pub pcore_cpus: Vec<u32>,
+    pub ecore_cpus: Vec<u32>,
+    pub turbo_rankings: Vec<u32>,
+    // Zen 5 specific
+    /// AMD Zen generation (4 = Zen 4, 5 = Zen 5), None for non-AMD
+    pub zen_generation: Option<u32>,
+    /// Non-V-Cache CCD for frequency-bound tasks (Zen 5 X3D asymmetric boost)
+    pub freq_ccd: Option<u32>,
+    /// L3 cache size in MB for V-Cache CCD (96MB: 32MB base + 64MB stacked)
+    pub vcache_l3_mb: Option<u32>,
+    /// Whether this CPU has asymmetric CCD boost (Zen 5 X3D)
+    pub asymmetric_ccd_boost: bool,
 }
 
 /// Known X3D processor models
@@ -34,14 +65,60 @@ pub fn detect_topology() -> Result<CpuTopology> {
     let nr_cpus = detect_nr_cpus()?;
     let model_name = detect_model_name()?;
     let is_x3d = is_x3d_processor(&model_name);
+    let cpu_family = detect_cpu_family();
 
     debug!("Detected CPU: {}", model_name);
-    debug!("Is X3D: {}", is_x3d);
+    debug!("Is X3D: {}, CPU family: {}", is_x3d, cpu_family);
+
+    // Detect Intel hybrid architecture
+    let intel_info = intel::detect_intel_hybrid(nr_cpus, &model_name)?;
+    let is_intel_hybrid = intel_info.is_hybrid;
+
+    // Determine Zen generation from CPU family
+    // Family 25 = Zen 3/4, Family 26 = Zen 5
+    let zen_generation = if model_name.contains("AMD") {
+        match cpu_family {
+            26 => Some(5), // Zen 5
+            25 => Some(4), // Zen 4 (and Zen 3)
+            23 => Some(2), // Zen 2
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    // Determine architecture type
+    let arch = if is_intel_hybrid {
+        debug!(
+            "Intel {}th gen hybrid: {} P-cores, {} E-cores",
+            intel_info.generation,
+            intel_info.pcore_cpus.len(),
+            intel_info.ecore_cpus.len()
+        );
+        CpuArch::IntelHybrid {
+            generation: intel_info.generation,
+        }
+    } else if model_name.contains("AMD") {
+        let zen_gen = zen_generation.unwrap_or(4);
+        debug!("AMD Zen {} architecture, X3D: {}", zen_gen, is_x3d);
+        CpuArch::AmdZen {
+            is_x3d,
+            generation: zen_gen,
+        }
+    } else {
+        debug!("Generic x86-64 architecture");
+        CpuArch::Generic
+    };
 
     // Detect CCD/CCX mapping from sysfs topology
-    let (cpu_to_ccd, cpu_to_ccx, cpu_to_node) = detect_cpu_topology(nr_cpus)?;
+    // For Intel hybrid, we use cluster_id to group P-cores and E-cores
+    let (cpu_to_ccd, cpu_to_ccx, cpu_to_node) = if is_intel_hybrid {
+        detect_intel_topology(nr_cpus, &intel_info)?
+    } else {
+        detect_cpu_topology(nr_cpus)?
+    };
 
-    // Count unique CCDs
+    // Count unique CCDs (or clusters for Intel)
     let nr_ccds = cpu_to_ccd.iter().max().map(|&m| m + 1).unwrap_or(1);
 
     // Determine V-Cache CCD for X3D processors
@@ -55,6 +132,36 @@ pub fn detect_topology() -> Result<CpuTopology> {
     let (cpu_to_sibling, smt_enabled) = detect_smt_siblings(nr_cpus)?;
     debug!("SMT enabled: {}", smt_enabled);
 
+    // Zen 5 X3D specific: asymmetric CCD boost
+    // Non-V-Cache CCD can boost higher, use for frequency-bound tasks
+    let is_zen5_x3d = is_x3d && zen_generation == Some(5);
+    let asymmetric_ccd_boost = is_zen5_x3d && nr_ccds >= 2;
+
+    // Determine frequency CCD (non-V-Cache CCD for Zen 5 X3D)
+    let freq_ccd = if asymmetric_ccd_boost && let Some(vc) = vcache_ccd {
+        // Use the other CCD for frequency-bound tasks
+        Some(if vc == 0 { 1 } else { 0 })
+    } else {
+        None
+    };
+
+    // V-Cache L3 size per CCD: All X3D V-Cache CCDs have 96MB (32MB base + 64MB stacked)
+    // - Single-CCD (7800X3D, 9800X3D): 96MB total
+    // - Multi-CCD (7900X3D, 7950X3D, 9900X3D, 9950X3D): 96MB on V-Cache CCD, 32MB on regular CCD
+    let vcache_l3_mb = if is_x3d { Some(96) } else { None };
+
+    if asymmetric_ccd_boost {
+        debug!(
+            "Zen 5 X3D asymmetric boost: V-Cache CCD {:?}, Freq CCD {:?}, L3 {:?}MB",
+            vcache_ccd, freq_ccd, vcache_l3_mb
+        );
+    } else if is_x3d && nr_ccds == 1 {
+        debug!(
+            "Single-CCD X3D: all {} cores have V-Cache, L3 {:?}MB",
+            nr_cpus, vcache_l3_mb
+        );
+    }
+
     Ok(CpuTopology {
         nr_cpus,
         nr_ccds,
@@ -66,7 +173,33 @@ pub fn detect_topology() -> Result<CpuTopology> {
         smt_enabled,
         is_x3d,
         model_name,
+        arch,
+        is_intel_hybrid,
+        pcore_cpus: intel_info.pcore_cpus,
+        ecore_cpus: intel_info.ecore_cpus,
+        turbo_rankings: intel_info.turbo_rankings,
+        zen_generation,
+        freq_ccd,
+        vcache_l3_mb,
+        asymmetric_ccd_boost,
     })
+}
+
+/// Detect CPU family from /proc/cpuinfo
+/// Family 25 = Zen 3/4, Family 26 = Zen 5
+fn detect_cpu_family() -> u32 {
+    let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") else {
+        return 0;
+    };
+    for line in cpuinfo.lines() {
+        if line.starts_with("cpu family")
+            && let Some((_, value)) = line.split_once(':')
+            && let Ok(family) = value.trim().parse::<u32>()
+        {
+            return family;
+        }
+    }
+    0 // Unknown
 }
 
 /// Get number of online CPUs
@@ -123,6 +256,46 @@ fn detect_vcache_ccd(model_name: &str, nr_ccds: u32) -> Option<u32> {
     }
 
     Some(0) // Default assumption
+}
+
+/// Detect Intel hybrid topology (cluster mapping for P-core/E-core grouping)
+fn detect_intel_topology(
+    nr_cpus: u32,
+    intel_info: &IntelHybridInfo,
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    let mut cpu_to_ccd = vec![0u32; nr_cpus as usize];
+    let mut cpu_to_ccx = vec![0u32; nr_cpus as usize];
+    let mut cpu_to_node = vec![0u32; nr_cpus as usize];
+
+    // For Intel hybrid, use cluster_id to group CPUs
+    // P-cores and E-cores are typically in different clusters
+    for cpu in 0..nr_cpus {
+        let base = format!("/sys/devices/system/cpu/cpu{}/topology", cpu);
+
+        // Read cluster ID (groups of cores)
+        let cluster_id = read_topology_file(&format!("{}/cluster_id", base)).unwrap_or(0);
+
+        // Use cluster as CCD equivalent
+        cpu_to_ccd[cpu as usize] = cluster_id;
+        cpu_to_ccx[cpu as usize] = cluster_id;
+
+        // NUMA node
+        let node = detect_cpu_node(cpu).unwrap_or(0);
+        cpu_to_node[cpu as usize] = node;
+
+        let core_type = if intel_info.pcore_cpus.contains(&cpu) {
+            "P-core"
+        } else {
+            "E-core"
+        };
+
+        debug!(
+            "CPU {}: {} cluster={}, node={}",
+            cpu, core_type, cluster_id, node
+        );
+    }
+
+    Ok((cpu_to_ccd, cpu_to_ccx, cpu_to_node))
 }
 
 /// Detect per-CPU topology (CCD, CCX, NUMA node)
@@ -270,6 +443,9 @@ fn cpu_in_list(cpu: u32, list: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// Zen 5 X3D models (family 26)
+    const ZEN5_X3D_MODELS: &[&str] = &["9800X3D", "9900X3D", "9950X3D"];
+
     #[test]
     fn test_is_x3d() {
         assert!(is_x3d_processor("AMD Ryzen 9 7950X3D"));
@@ -287,5 +463,75 @@ mod tests {
         assert!(!cpu_in_list(8, "0-7"));
         assert!(cpu_in_list(16, "0-7,16-23"));
         assert!(cpu_in_list(5, "5"));
+    }
+
+    #[test]
+    fn test_cpu_arch_detection() {
+        // AMD Zen 4 X3D should be detected
+        let arch = if is_x3d_processor("AMD Ryzen 9 7950X3D") {
+            CpuArch::AmdZen {
+                is_x3d: true,
+                generation: 4,
+            }
+        } else {
+            CpuArch::Generic
+        };
+        assert_eq!(
+            arch,
+            CpuArch::AmdZen {
+                is_x3d: true,
+                generation: 4
+            }
+        );
+
+        // AMD Zen 5 X3D should be detected
+        let arch_zen5 = if is_x3d_processor("AMD Ryzen 9 9950X3D") {
+            CpuArch::AmdZen {
+                is_x3d: true,
+                generation: 5,
+            }
+        } else {
+            CpuArch::Generic
+        };
+        assert_eq!(
+            arch_zen5,
+            CpuArch::AmdZen {
+                is_x3d: true,
+                generation: 5
+            }
+        );
+
+        // Intel hybrid should be detected
+        if let Some(g) = intel::is_intel_hybrid_model("Intel Core i9-14900K") {
+            let arch = CpuArch::IntelHybrid { generation: g };
+            assert_eq!(arch, CpuArch::IntelHybrid { generation: 14 });
+        }
+    }
+
+    #[test]
+    fn test_zen5_x3d_detection() {
+        // Zen 5 X3D models
+        assert!(
+            ZEN5_X3D_MODELS
+                .iter()
+                .any(|m| "AMD Ryzen 9 9950X3D".contains(m))
+        );
+        assert!(
+            ZEN5_X3D_MODELS
+                .iter()
+                .any(|m| "AMD Ryzen 9 9900X3D".contains(m))
+        );
+        assert!(
+            ZEN5_X3D_MODELS
+                .iter()
+                .any(|m| "AMD Ryzen 7 9800X3D".contains(m))
+        );
+
+        // Zen 4 X3D models should not match Zen 5
+        assert!(
+            !ZEN5_X3D_MODELS
+                .iter()
+                .any(|m| "AMD Ryzen 9 7950X3D".contains(m))
+        );
     }
 }

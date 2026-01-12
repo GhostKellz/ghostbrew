@@ -1,7 +1,7 @@
 %global crate scx_ghostbrew
 
 Name:           ghostbrew
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        sched-ext BPF scheduler optimized for AMD Zen5/X3D processors
 
@@ -76,6 +76,17 @@ install -Dpm 644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %{_unitdir}/scx-ghostbrew.service
 
 %changelog
+* Sat Jan 11 2026 ghostkellz <ckelley@ghostkellz.sh> - 0.2.0-1
+- AMD Ryzen 9950X3D (Zen5) support with 128MB V-Cache
+- Intel Hybrid CPU support (P-core/E-core differentiation)
+- Per-game profiles (25+ profiles for games, streaming, productivity)
+- V-Cache coordination with ghost-vcache sysfs
+- MangoHud integration for frame time analysis
+- Runtime control interface at /run/ghostbrew/control
+- TOML configuration system
+- Event streaming via BPF ringbuf
+- 43 tests (29 unit + 14 integration)
+
 * Tue Dec 17 2024 ghostkellz <ckelley@ghostkellz.sh> - 0.1.0-1
 - Initial release
 - sched-ext BPF scheduler for AMD Zen5/X3D

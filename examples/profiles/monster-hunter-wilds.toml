@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Monster Hunter Wilds
+#
+# Monster Hunter Wilds with RE Engine benefits from
+# large cache for texture streaming and world detail.
+#
+# Install: cp monster-hunter-wilds.toml ~/.config/ghostbrew/profiles/
+
+name = "Monster Hunter Wilds"
+
+# Match by executable name
+exe_name = "MonsterHunterWilds.exe"
+
+# Steam App ID (update when released)
+steam_appid = 2246340
+
+# Maximum V-Cache preference
+vcache_preference = "cache"
+
+# Prefer idle SMT siblings
+smt_preference = "prefer_idle"
+
+[tunables]
+# RE Engine likes consistent frame pacing
+burst_threshold_ns = 1500000  # 1.5ms
+
+# Slightly longer slice for complex scenes
+slice_ns = 3000000  # 3ms

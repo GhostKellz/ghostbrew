@@ -2,7 +2,7 @@
 //
 // GhostBrew - BPF skeleton module
 //
-// Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
+// Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
 // Suppress warnings from generated skeleton
 #![allow(dead_code)]

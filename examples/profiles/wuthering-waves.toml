@@ -1,0 +1,27 @@
+# GhostBrew Game Profile - Wuthering Waves
+#
+# Open world action RPG with demanding graphics.
+# Benefits from V-Cache for world streaming.
+#
+# Install: cp wuthering-waves.toml ~/.config/ghostbrew/profiles/
+
+name = "Wuthering Waves"
+
+# Match by executable name
+exe_name = "Wuthering Waves.exe"
+
+# Not on Steam
+# steam_appid = 0
+
+# V-Cache for open world asset streaming
+vcache_preference = "cache"
+
+# Prefer idle SMT for smooth combat
+smt_preference = "prefer_idle"
+
+[tunables]
+# Moderate burst threshold
+burst_threshold_ns = 1500000  # 1.5ms
+
+# Standard slice
+slice_ns = 3000000  # 3ms

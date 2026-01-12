@@ -1,0 +1,34 @@
+# GhostBrew Game Profile - EVE Online Multiboxing (3 Accounts)
+#
+# Optimized for running multiple EVE Online clients simultaneously.
+# Balances load across CCDs to prevent thermal throttling.
+#
+# Install: cp eve-multibox.toml ~/.config/ghostbrew/profiles/
+#
+# Tips for multiboxing:
+# - Run main account first (gets best cores via prefcore)
+# - Use ISBoxer or similar for input broadcasting
+# - Consider lowering graphics on alt accounts
+
+name = "EVE Online Multibox"
+
+# Match any EVE process
+exe_name = "exefile.exe"
+comm_pattern = "exefile"
+
+# V-Cache preference - EVE benefits heavily from cache
+# All 3 clients will compete for V-Cache CCD
+vcache_preference = "cache"
+
+# SMT preference - spread load, don't pack cores
+# This helps when running 3+ clients
+smt_preference = "spread"
+
+[tunables]
+# Slightly higher burst threshold to give each client fair time
+# Prevents one client from starving others during fleet fights
+burst_threshold_ns = 2000000  # 2ms
+
+# Longer time slice for multiboxing - reduces context switch overhead
+# Each client gets more uninterrupted CPU time
+slice_ns = 4000000  # 4ms (vs 3ms default)
