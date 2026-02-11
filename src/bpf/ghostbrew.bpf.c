@@ -28,7 +28,7 @@ char _license[] SEC("license") = "GPL";
 /*
  * Constants
  */
-#define GHOSTBREW_VERSION	"0.1.0"
+#define GHOSTBREW_VERSION	"0.2.1"
 #define MAX_CPUS		256
 #define MAX_CCDS		8
 #define NSEC_PER_MSEC		1000000ULL

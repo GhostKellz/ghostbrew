@@ -228,8 +228,8 @@ mod tests {
     #[test]
     fn test_pcore_threshold() {
         // P-cores should be >= 900 capacity
-        assert!(1024 >= PCORE_CAPACITY_THRESHOLD);
+        const { assert!(1024 >= PCORE_CAPACITY_THRESHOLD) };
         // E-cores are typically ~768
-        assert!(768 < PCORE_CAPACITY_THRESHOLD);
+        const { assert!(768 < PCORE_CAPACITY_THRESHOLD) };
     }
 }

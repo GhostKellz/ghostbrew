@@ -7,7 +7,6 @@
 // Copyright (C) 2025 ghostkellz <ckelley@ghostkellz.sh>
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use std::hint::black_box as std_black_box;
 
 /// Benchmark task classification decisions
 ///
@@ -24,7 +23,7 @@ fn bench_task_classification(c: &mut Criterion) {
         50_000_000, // 50ms - heavy batch
     ];
 
-    for (i, &burst) in burst_values.iter().enumerate() {
+    for &burst in burst_values.iter() {
         group.bench_with_input(
             BenchmarkId::new("burst_classify", format!("{}ns", burst)),
             &burst,
@@ -212,7 +211,7 @@ fn bench_ccd_locality(c: &mut Criterion) {
             let same_ccd: Vec<usize> = cpu_to_ccd
                 .iter()
                 .enumerate()
-                .filter(|(_, &ccd)| ccd == target_ccd)
+                .filter(|&(_, ccd)| *ccd == target_ccd)
                 .map(|(cpu, _)| cpu)
                 .collect();
             black_box(same_ccd)

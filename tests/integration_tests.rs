@@ -25,7 +25,7 @@ fn test_example_configs_parse() {
         let entry = entry.unwrap();
         let path = entry.path();
 
-        if path.extension().map_or(false, |e| e == "toml") {
+        if path.extension().is_some_and(|e| e == "toml") {
             let content = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
 
@@ -51,7 +51,7 @@ fn test_example_profiles_parse() {
         let entry = entry.unwrap();
         let path = entry.path();
 
-        if path.extension().map_or(false, |e| e == "toml") {
+        if path.extension().is_some_and(|e| e == "toml") {
             let content = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
 
