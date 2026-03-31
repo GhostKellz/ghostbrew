@@ -26,14 +26,13 @@ pub fn is_arena_supported() -> bool {
     // We can detect this by checking for the BTF type or kernel version
 
     // Method 1: Check kernel version
-    if let Ok(release) = fs::read_to_string("/proc/sys/kernel/osrelease") {
-        if let Some(version) = parse_kernel_version(release.trim()) {
-            // Arena requires 6.18+
-            if version.0 > 6 || (version.0 == 6 && version.1 >= 18) {
-                debug!("Kernel version {} supports BPF Arena", release.trim());
-                return true;
-            }
-        }
+    if let Ok(release) = fs::read_to_string("/proc/sys/kernel/osrelease")
+        && let Some(version) = parse_kernel_version(release.trim())
+        // Arena requires 6.18+
+        && (version.0 > 6 || (version.0 == 6 && version.1 >= 18))
+    {
+        debug!("Kernel version {} supports BPF Arena", release.trim());
+        return true;
     }
 
     // Method 2: Check for arena-related BTF types in vmlinux

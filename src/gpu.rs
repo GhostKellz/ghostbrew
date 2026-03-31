@@ -334,10 +334,10 @@ impl GpuMonitor {
         }
 
         // Try NVIDIA sysfs (hwmon)
-        if let Some(gpu) = self.primary_gpu() {
-            if let Ok(util) = Self::read_nvidia_gpu_util(&gpu.pci_address) {
-                return Some(util);
-            }
+        if let Some(gpu) = self.primary_gpu()
+            && let Ok(util) = Self::read_nvidia_gpu_util(&gpu.pci_address)
+        {
+            return Some(util);
         }
 
         None
@@ -361,7 +361,10 @@ impl GpuMonitor {
     fn read_nvidia_gpu_util(pci_address: &str) -> Result<u32> {
         // Try nvidia-smi utility (most reliable for NVIDIA)
         if let Ok(output) = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+            .args([
+                "--query-gpu=utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ])
             .output()
             && output.status.success()
             && let Ok(stdout) = String::from_utf8(output.stdout)
@@ -371,10 +374,7 @@ impl GpuMonitor {
         }
 
         // Fallback: try reading from /proc
-        let utilization_path = format!(
-            "/proc/driver/nvidia/gpus/{}/utilization",
-            pci_address
-        );
+        let utilization_path = format!("/proc/driver/nvidia/gpus/{}/utilization", pci_address);
         if let Ok(content) = fs::read_to_string(&utilization_path) {
             for line in content.lines() {
                 if line.contains("Graphics:")

@@ -32,3 +32,7 @@ pkg/
 
 # Claude notes
 CLAUDE.md
+
+# Task tracking
+tasks/
+tasks/lessons.md

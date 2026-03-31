@@ -457,7 +457,11 @@ impl KernelVersion {
         let minor = parts.next()?.parse().ok()?;
         let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
 
-        Some(Self { major, minor, patch })
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
     }
 
     /// Check if this version is at least the specified version
@@ -474,8 +478,7 @@ impl std::fmt::Display for KernelVersion {
 
 /// Get the current kernel version
 pub fn get_kernel_version() -> Option<KernelVersion> {
-    let release = fs::read_to_string("/proc/sys/kernel/osrelease")
-        .ok()?;
+    let release = fs::read_to_string("/proc/sys/kernel/osrelease").ok()?;
     KernelVersion::parse(release.trim())
 }
 
@@ -500,9 +503,7 @@ pub fn detect_dl_server_support() -> DlServerInfo {
     let kernel_version = get_kernel_version();
 
     // DL server requires kernel 7.0+
-    let supported = kernel_version
-        .as_ref()
-        .is_some_and(|v| v.at_least(7, 0));
+    let supported = kernel_version.as_ref().is_some_and(|v| v.at_least(7, 0));
 
     // Check for ext_server interface in sysfs
     let ext_server_available = Path::new("/sys/kernel/sched_ext/ext_server").exists()

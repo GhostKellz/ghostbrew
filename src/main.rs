@@ -193,12 +193,16 @@ impl<'a> Scheduler<'a> {
         if dl_server.supported {
             info!(
                 "DL server available (kernel {}) - RT starvation protection enabled",
-                dl_server.kernel_version.map_or("7.0+".to_string(), |v| v.to_string())
+                dl_server
+                    .kernel_version
+                    .map_or("7.0+".to_string(), |v| v.to_string())
             );
         } else {
             debug!(
                 "DL server not available (requires kernel 7.0+, current: {})",
-                dl_server.kernel_version.map_or("unknown".to_string(), |v| v.to_string())
+                dl_server
+                    .kernel_version
+                    .map_or("unknown".to_string(), |v| v.to_string())
             );
         }
 
