@@ -242,10 +242,52 @@ Required tools:
 - bpftool
 - Kernel headers with BTF
 
+## Kernel Compatibility Layer
+
+GhostBrew maintains compatibility across kernel versions using the sched-ext compat headers:
+
+### Header Structure
+```
+src/bpf/scx/
+├── common.bpf.h       # Core sched-ext definitions
+├── compat.bpf.h       # Version-adaptive wrappers
+├── compat.h           # Userspace compat utilities
+├── enums*.h           # Auto-generated enum definitions
+└── user_exit_info*.h  # Exit info structures
+```
+
+### API Version Handling
+
+The compat layer handles kernel API evolution transparently:
+
+| API | Old (≤6.18) | New (6.19+) | Compat Strategy |
+|-----|-------------|-------------|-----------------|
+| `scx_bpf_dsq_insert()` | void return | bool return | Runtime detection |
+| `scx_bpf_dsq_insert_vtime()` | 5 scalar args | Struct-packed | Inline wrapper |
+| `scx_bpf_select_cpu_and()` | 5 scalar args | Struct-packed | Inline wrapper |
+| `scx_bpf_reenqueue_local()` | cpu_release only | Anywhere | Version suffix |
+
+### vmlinux.h Management
+
+The `vmlinux.h` file is generated from kernel BTF:
+
+```bash
+bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/bpf/vmlinux.h
+```
+
+**Important**: Some extern declarations must be filtered to avoid conflicts with compat inline wrappers. The filtered functions are those that `compat.bpf.h` provides wrapper implementations for.
+
+### Supported Kernel Versions
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| 6.12-6.18 | Supported | Original sched-ext API |
+| 6.19 | Supported | DL server, bool returns, struct args |
+| 7.0-rc | Supported | Full compat layer coverage |
+
 ## Future Directions
 
-- Frame-pacing detection for smoother gaming
-- GPU scheduler coordination
-- Intel hybrid (P-core/E-core) support
+- GPU scheduler coordination (NVIDIA/AMD)
 - Power efficiency modes
-- Per-game profiles
+- Enhanced frame-pacing detection
+- Cross-process affinity groups

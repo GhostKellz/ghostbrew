@@ -321,7 +321,8 @@ Previously tested on AMD Ryzen 9 7950X3D (Zen4 X3D).
 | **linux-cachyos-lto** | Yes | **Yes** | LTO optimized, slightly better performance |
 | **linux-ghost** | Yes | Yes | Custom kernel with ghost-vcache integration |
 | linux-zen | Yes | — | 6.12+ required |
-| Mainline | Yes | — | 6.12+ required |
+| Mainline 6.12-6.19 | Yes | — | Full support |
+| **Mainline 7.0** | Yes | **Yes** | Full compat layer, DL server benefits |
 
 **CachyOS Users:**
 ```bash

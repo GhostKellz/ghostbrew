@@ -60,18 +60,11 @@ static inline void ___vmlinux_h_sanity_check___(void)
 
 s32 scx_bpf_create_dsq(u64 dsq_id, s32 node) __ksym;
 s32 scx_bpf_select_cpu_dfl(struct task_struct *p, s32 prev_cpu, u64 wake_flags, bool *is_idle) __ksym;
-s32 scx_bpf_select_cpu_and(struct task_struct *p, s32 prev_cpu, u64 wake_flags,
-			   const struct cpumask *cpus_allowed, u64 flags) __ksym __weak;
-void scx_bpf_dsq_insert(struct task_struct *p, u64 dsq_id, u64 slice, u64 enq_flags) __ksym __weak;
-void scx_bpf_dsq_insert_vtime(struct task_struct *p, u64 dsq_id, u64 slice, u64 vtime, u64 enq_flags) __ksym __weak;
+s32 __scx_bpf_select_cpu_and(struct task_struct *p, const struct cpumask *cpus_allowed,
+			     struct scx_bpf_select_cpu_and_args *args) __ksym __weak;
+bool __scx_bpf_dsq_insert_vtime(struct task_struct *p, struct scx_bpf_dsq_insert_vtime_args *args) __ksym __weak;
 u32 scx_bpf_dispatch_nr_slots(void) __ksym;
 void scx_bpf_dispatch_cancel(void) __ksym;
-bool scx_bpf_dsq_move_to_local(u64 dsq_id) __ksym __weak;
-void scx_bpf_dsq_move_set_slice(struct bpf_iter_scx_dsq *it__iter, u64 slice) __ksym __weak;
-void scx_bpf_dsq_move_set_vtime(struct bpf_iter_scx_dsq *it__iter, u64 vtime) __ksym __weak;
-bool scx_bpf_dsq_move(struct bpf_iter_scx_dsq *it__iter, struct task_struct *p, u64 dsq_id, u64 enq_flags) __ksym __weak;
-bool scx_bpf_dsq_move_vtime(struct bpf_iter_scx_dsq *it__iter, struct task_struct *p, u64 dsq_id, u64 enq_flags) __ksym __weak;
-u32 scx_bpf_reenqueue_local(void) __ksym;
 void scx_bpf_kick_cpu(s32 cpu, u64 flags) __ksym;
 s32 scx_bpf_dsq_nr_queued(u64 dsq_id) __ksym;
 void scx_bpf_destroy_dsq(u64 dsq_id) __ksym;
@@ -104,9 +97,8 @@ s32 scx_bpf_pick_any_cpu(const cpumask_t *cpus_allowed, u64 flags) __ksym;
 bool scx_bpf_task_running(const struct task_struct *p) __ksym;
 s32 scx_bpf_task_cpu(const struct task_struct *p) __ksym;
 struct rq *scx_bpf_cpu_rq(s32 cpu) __ksym;
-struct rq *scx_bpf_rq_locked(void) __ksym;
+struct rq *scx_bpf_locked_rq(void) __ksym;
 struct task_struct *scx_bpf_cpu_curr(s32 cpu) __ksym __weak;
-struct cgroup *scx_bpf_task_cgroup(struct task_struct *p) __ksym __weak;
 u64 scx_bpf_now(void) __ksym __weak;
 void scx_bpf_events(struct scx_event_stats *events, size_t events__sz) __ksym __weak;
 
@@ -344,7 +336,6 @@ void bpf_task_release(struct task_struct *p) __ksym;
 
 /* cgroup */
 struct cgroup *bpf_cgroup_ancestor(struct cgroup *cgrp, int level) __ksym;
-struct cgroup *bpf_cgroup_acquire(struct cgroup *cgrp) __ksym;
 void bpf_cgroup_release(struct cgroup *cgrp) __ksym;
 struct cgroup *bpf_cgroup_from_id(u64 cgid) __ksym;
 
@@ -751,70 +742,6 @@ static inline u64 __sqrt_u64(u64 x)
 }
 
 /*
- * ctzll -- Counts trailing zeros in an unsigned long long. If the input value
- * is zero, the return value is undefined.
- */
-static inline int ctzll(u64 v)
-{
-#ifdef __SCX_TARGET_ARCH_x86
-	/*
-	 * If the target architecture and tool chains support ctzll,
-	 * let's use a single instruction.
-	 */
-	return __builtin_ctzll(v);
-#else
-	/*
-	 * If neither the target architecture nor the toolchains support ctzll,
-	 * use software-based emulation. Let's use the De Bruijn sequence-based
-	 * approach to find LSB fastly. See the details of De Bruijn sequence:
-	 *
-	 * https://en.wikipedia.org/wiki/De_Bruijn_sequence
-	 * https://www.chessprogramming.org/BitScan#De_Bruijn_Multiplication
-	 */
-	const int lookup_table[64] = {
-		 0,  1, 48,  2, 57, 49, 28,  3, 61, 58, 50, 42, 38, 29, 17,  4,
-		62, 55, 59, 36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12,  5,
-		63, 47, 56, 27, 60, 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11,
-		46, 26, 40, 15, 34, 20, 31, 10, 25, 14, 19,  9, 13,  8,  7,  6,
-	};
-	const u64 DEBRUIJN_CONSTANT = 0x03f79d71b4cb0a89ULL;
-	unsigned int index;
-	u64 lowest_bit;
-	const int *lt;
-
-	if (v == 0)
-		return -1;
-
-	/*
-	 * Isolate the least significant bit (LSB).
-	 * For example, if v = 0b...10100, then v & -v = 0b...00100
-	 */
-	lowest_bit = v & -v;
-
-	/*
-	 * Each isolated bit produces a unique 6-bit value, guaranteed by the
-	 * De Bruijn property. Calculate a unique index into the lookup table
-	 * using the magic constant and a right shift.
-	 *
-	 * Multiplying by the 64-bit constant “spreads out” that 1-bit into a
-	 * unique pattern in the top 6 bits. This uniqueness property is
-	 * exactly what a De Bruijn sequence guarantees: Every possible 6-bit
-	 * pattern (in top bits) occurs exactly once for each LSB position. So,
-	 * the constant 0x03f79d71b4cb0a89ULL is carefully chosen to be a
-	 * De Bruijn sequence, ensuring no collisions in the table index.
-	 */
-	index = (lowest_bit * DEBRUIJN_CONSTANT) >> 58;
-
-	/*
-	 * Lookup in a precomputed table. No collision is guaranteed by the
-	 * De Bruijn property.
-	 */
-	lt = MEMBER_VPTR(lookup_table, [index]);
-	return (lt)? *lt : -1;
-#endif
-}
-
-/*
  * Return a value proportionally scaled to the task's weight.
  */
 static inline u64 scale_by_task_weight(const struct task_struct *p, u64 value)
@@ -828,14 +755,6 @@ static inline u64 scale_by_task_weight(const struct task_struct *p, u64 value)
 static inline u64 scale_by_task_weight_inverse(const struct task_struct *p, u64 value)
 {
 	return value * 100 / p->scx.weight;
-}
-
-/*
- * Get a random u64 from the kernel's pseudo-random generator.
- */
-static inline u64 get_prandom_u64()
-{
-	return ((u64)bpf_get_prandom_u32() << 32) | bpf_get_prandom_u32();
 }
 
 

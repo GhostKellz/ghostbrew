@@ -22,6 +22,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "scx/common.bpf.h"
+#include "scx/compat.bpf.h"
 
 char _license[] SEC("license") = "GPL";
 

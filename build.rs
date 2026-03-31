@@ -35,9 +35,4 @@ fn main() {
         ])
         .build_and_generate(&skel_path)
         .expect("Failed to build BPF skeleton");
-
-    println!(
-        "cargo:warning=BPF skeleton generated at: {}",
-        skel_path.display()
-    );
 }
