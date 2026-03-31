@@ -320,6 +320,96 @@ impl GpuMonitor {
     pub fn primary_gpu(&self) -> Option<&NvidiaGpuInfo> {
         self.gpus.first()
     }
+
+    /// Read GPU utilization percentage (0-100) for the primary GPU
+    ///
+    /// Tries multiple sources in order:
+    /// 1. AMD sysfs (gpu_busy_percent)
+    /// 2. NVIDIA nvidia-smi (fallback)
+    #[allow(dead_code)] // Scaffolding for future GPU coordination
+    pub fn read_gpu_utilization(&self) -> Option<u32> {
+        // Try AMD sysfs first (works for AMD GPUs)
+        if let Ok(util) = Self::read_amd_gpu_util() {
+            return Some(util);
+        }
+
+        // Try NVIDIA sysfs (hwmon)
+        if let Some(gpu) = self.primary_gpu() {
+            if let Ok(util) = Self::read_nvidia_gpu_util(&gpu.pci_address) {
+                return Some(util);
+            }
+        }
+
+        None
+    }
+
+    /// Read AMD GPU utilization from sysfs
+    fn read_amd_gpu_util() -> Result<u32> {
+        // AMD GPUs expose utilization via drm sysfs
+        for card_num in 0..4 {
+            let path = format!("/sys/class/drm/card{}/device/gpu_busy_percent", card_num);
+            if let Ok(content) = fs::read_to_string(&path)
+                && let Ok(util) = content.trim().parse::<u32>()
+            {
+                return Ok(util.min(100));
+            }
+        }
+        anyhow::bail!("AMD GPU utilization not available")
+    }
+
+    /// Read NVIDIA GPU utilization via hwmon or nvidia-smi
+    fn read_nvidia_gpu_util(pci_address: &str) -> Result<u32> {
+        // Try nvidia-smi utility (most reliable for NVIDIA)
+        if let Ok(output) = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+            .output()
+            && output.status.success()
+            && let Ok(stdout) = String::from_utf8(output.stdout)
+            && let Ok(util) = stdout.lines().next().unwrap_or("0").trim().parse::<u32>()
+        {
+            return Ok(util.min(100));
+        }
+
+        // Fallback: try reading from /proc
+        let utilization_path = format!(
+            "/proc/driver/nvidia/gpus/{}/utilization",
+            pci_address
+        );
+        if let Ok(content) = fs::read_to_string(&utilization_path) {
+            for line in content.lines() {
+                if line.contains("Graphics:")
+                    && let Some(pct) = line.split(':').nth(1)
+                    && let Some(num) = pct.trim().strip_suffix('%')
+                    && let Ok(util) = num.trim().parse::<u32>()
+                {
+                    return Ok(util.min(100));
+                }
+            }
+        }
+
+        anyhow::bail!("NVIDIA GPU utilization not available")
+    }
+
+    /// Detect GPU bottleneck state based on utilization
+    ///
+    /// Returns:
+    /// - GpuBound if utilization >95%
+    /// - CpuBound if utilization <50%
+    /// - Balanced otherwise
+    #[allow(dead_code)] // Scaffolding for future GPU coordination
+    pub fn detect_bottleneck(&self) -> GpuBottleneck {
+        let Some(util) = self.read_gpu_utilization() else {
+            return GpuBottleneck::Balanced;
+        };
+
+        if util > 95 {
+            GpuBottleneck::GpuBound
+        } else if util < 50 {
+            GpuBottleneck::CpuBound
+        } else {
+            GpuBottleneck::Balanced
+        }
+    }
 }
 
 impl Default for GpuMonitor {
@@ -346,6 +436,41 @@ pub const GPU_THREAD_PATTERNS: &[&str] = &[
     "dxvk",  // DXVK (Vulkan translation layer)
     "vkd3d", // VKD3D (D3D12 translation)
 ];
+
+/// GPU bottleneck state for scheduler coordination
+#[allow(dead_code)] // Scaffolding for future GPU coordination integration
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum GpuBottleneck {
+    /// GPU utilization >95%: reduce CPU work, let GPU catch up
+    GpuBound,
+    /// GPU utilization <50%: boost CPU scheduling for GPU feeders
+    CpuBound,
+    /// GPU utilization 50-95%: balanced workload
+    #[default]
+    Balanced,
+}
+
+#[allow(dead_code)] // Scaffolding for future GPU coordination
+impl GpuBottleneck {
+    /// Convert to BPF gpu_bound_mode value
+    pub fn as_bpf_mode(self) -> u8 {
+        match self {
+            GpuBottleneck::Balanced => 0,
+            GpuBottleneck::GpuBound => 1,
+            GpuBottleneck::CpuBound => 2,
+        }
+    }
+}
+
+impl std::fmt::Display for GpuBottleneck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuBottleneck::GpuBound => write!(f, "GPU-bound"),
+            GpuBottleneck::CpuBound => write!(f, "CPU-bound"),
+            GpuBottleneck::Balanced => write!(f, "Balanced"),
+        }
+    }
+}
 
 /// Check if a process name looks like a GPU-feeding thread
 #[allow(dead_code)]

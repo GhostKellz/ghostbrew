@@ -4,6 +4,7 @@
 //
 // Copyright (C) 2025-2026 ghostkellz <ckelley@ghostkellz.sh>
 
+mod arena;
 mod bpf_skel;
 mod cgroup;
 mod config;
@@ -187,6 +188,20 @@ impl<'a> Scheduler<'a> {
             }
         }
 
+        // Detect DL server support (kernel 7.0+ feature)
+        let dl_server = topology::detect_dl_server_support();
+        if dl_server.supported {
+            info!(
+                "DL server available (kernel {}) - RT starvation protection enabled",
+                dl_server.kernel_version.map_or("7.0+".to_string(), |v| v.to_string())
+            );
+        } else {
+            debug!(
+                "DL server not available (requires kernel 7.0+, current: {})",
+                dl_server.kernel_version.map_or("unknown".to_string(), |v| v.to_string())
+            );
+        }
+
         // Log per-CCD/cluster CPU distribution
         for ccd in 0..topology.nr_ccds {
             let cpus_in_ccd: Vec<u32> = topology
@@ -344,7 +359,11 @@ impl<'a> Scheduler<'a> {
 
         // Configure tunables via rodata
         {
-            let rodata = &mut open_skel.maps.rodata_data;
+            let rodata = open_skel
+                .maps
+                .rodata_data
+                .as_mut()
+                .expect("rodata should be available");
             // Topology config (static, set before load)
             rodata.nr_cpus_possible = topology.nr_cpus;
             rodata.nr_ccds = topology.nr_ccds;
@@ -1003,7 +1022,9 @@ impl<'a> Scheduler<'a> {
 
         // For automatic switching strategy, evaluate based on workload metrics
         if self.config.is_vcache_auto_switching() {
-            let bss = &self.skel.maps.bss_data;
+            let Some(bss) = self.skel.maps.bss_data.as_ref() else {
+                return;
+            };
             let nr_gaming = bss.nr_gaming_tasks;
             let nr_batch = bss.nr_enqueued.saturating_sub(nr_gaming); // Rough batch estimate
 
@@ -1050,7 +1071,10 @@ impl<'a> Scheduler<'a> {
     }
 
     fn print_stats(&self) {
-        let bss = &self.skel.maps.bss_data;
+        let Some(bss) = self.skel.maps.bss_data.as_ref() else {
+            println!("--- GhostBrew Stats (unavailable) ---");
+            return;
+        };
         println!("--- GhostBrew Stats ---");
         println!("  Enqueued: {}", bss.nr_enqueued);
         println!(
@@ -1223,7 +1247,9 @@ impl<'a> Scheduler<'a> {
         // Get per-CCD task counts first (before mutable borrow)
         let (ccd0_tasks, ccd1_tasks) = self.get_ccd_task_counts();
 
-        let bss = &self.skel.maps.bss_data;
+        let Some(bss) = self.skel.maps.bss_data.as_ref() else {
+            return;
+        };
 
         // Calculate jitter from sum of squares
         let (jitter_us, late_pct) = if bss.gaming_latency_count > 0 {
@@ -1237,6 +1263,9 @@ impl<'a> Scheduler<'a> {
             (0, 0)
         };
 
+        // Calculate latency percentiles from histogram
+        let (p50, p95, p99) = mangohud::calculate_latency_percentiles(&bss.gaming_latency_hist);
+
         let stats = mangohud::SchedulerStats {
             timestamp_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1249,6 +1278,9 @@ impl<'a> Scheduler<'a> {
                 0
             },
             latency_max_us: bss.latency_max_ns / 1000,
+            latency_p50_us: p50,
+            latency_p95_us: p95,
+            latency_p99_us: p99,
             jitter_us,
             late_pct,
             preemptions: bss.gaming_preempted,

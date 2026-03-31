@@ -1,6 +1,6 @@
 [package]
 name = "scx_ghostbrew"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 authors = ["ghostkellz <ckelley@ghostkellz.sh>"]
 license = "GPL-2.0-only"
@@ -18,7 +18,7 @@ path = "src/main.rs"
 scx_utils = "1.0"
 
 # BPF loading and management
-libbpf-rs = "0.24"
+libbpf-rs = "0.26"
 
 # CLI argument parsing
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -56,7 +56,7 @@ ctrlc = { version = "3.4", features = ["termination"] }
 
 [build-dependencies]
 # BPF compilation
-libbpf-cargo = "0.24"
+libbpf-cargo = "0.26"
 
 [profile.release]
 lto = "fat"

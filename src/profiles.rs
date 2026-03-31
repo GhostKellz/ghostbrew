@@ -42,6 +42,15 @@ pub struct GameProfile {
     /// SMT behavior preference
     #[serde(default)]
     pub smt_preference: SmtPreference,
+
+    /// NUMA node preference (v0.3.0)
+    #[serde(default)]
+    pub numa_preference: NumaPreference,
+
+    /// Explicit CPU affinity list (v0.3.0)
+    /// Format: "0-7,16-23" or [0, 1, 2, 3]
+    #[serde(default)]
+    pub cpu_affinity: Option<Vec<u32>>,
 }
 
 /// Per-profile scheduling tunables
@@ -84,6 +93,23 @@ pub enum SmtPreference {
     PreferIdle,
     /// Allow shared physical cores
     AllowShared,
+}
+
+/// NUMA node preference for multi-socket/multi-CCD systems
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NumaPreference {
+    /// Let scheduler decide based on memory locality
+    #[default]
+    Auto,
+    /// Prefer NUMA node where GPU is attached
+    GpuLocal,
+    /// Force NUMA node 0
+    Node0,
+    /// Force NUMA node 1
+    Node1,
+    /// Spread threads across NUMA nodes (for highly parallel workloads)
+    Spread,
 }
 
 /// Profile manager handles loading and matching game profiles
@@ -248,5 +274,19 @@ burst_threshold_ns = 1000000
         assert_eq!(profile.tunables.burst_threshold_ns, Some(1000000));
         assert_eq!(profile.vcache_preference, VCachePreference::Cache);
         assert_eq!(profile.smt_preference, SmtPreference::PreferIdle);
+    }
+
+    #[test]
+    fn test_profile_numa_preference() {
+        let toml_str = r#"
+name = "NUMA Test Game"
+exe_name = "numatest.exe"
+numa_preference = "gpu_local"
+cpu_affinity = [0, 1, 2, 3, 4, 5, 6, 7]
+"#;
+        let profile: GameProfile = toml::from_str(toml_str).unwrap();
+        assert_eq!(profile.name, "NUMA Test Game");
+        assert_eq!(profile.numa_preference, NumaPreference::GpuLocal);
+        assert_eq!(profile.cpu_affinity, Some(vec![0, 1, 2, 3, 4, 5, 6, 7]));
     }
 }

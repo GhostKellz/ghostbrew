@@ -439,6 +439,82 @@ fn cpu_in_list(cpu: u32, list: &str) -> bool {
     false
 }
 
+/// Kernel version representation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KernelVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl KernelVersion {
+    /// Parse kernel version from uname release string (e.g., "6.12.5-cachyos")
+    pub fn parse(release: &str) -> Option<Self> {
+        let version_part = release.split('-').next()?;
+        let mut parts = version_part.split('.');
+
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next()?.parse().ok()?;
+        let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Some(Self { major, minor, patch })
+    }
+
+    /// Check if this version is at least the specified version
+    pub fn at_least(&self, major: u32, minor: u32) -> bool {
+        self.major > major || (self.major == major && self.minor >= minor)
+    }
+}
+
+impl std::fmt::Display for KernelVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+/// Get the current kernel version
+pub fn get_kernel_version() -> Option<KernelVersion> {
+    let release = fs::read_to_string("/proc/sys/kernel/osrelease")
+        .ok()?;
+    KernelVersion::parse(release.trim())
+}
+
+/// DL Server support information
+#[derive(Debug, Clone)]
+pub struct DlServerInfo {
+    /// Whether DL server is supported (requires kernel 7.0+)
+    pub supported: bool,
+    /// Whether ext_server interface is available
+    #[allow(dead_code)] // Reserved for future ext_server integration
+    pub ext_server_available: bool,
+    /// Kernel version
+    pub kernel_version: Option<KernelVersion>,
+}
+
+/// Detect DL (Deadline) server support
+///
+/// The DL server provides RT starvation protection by ensuring SCHED_EXT
+/// tasks get a guaranteed runtime percentage even under RT task pressure.
+/// This feature requires kernel 7.0+ with ext_server support.
+pub fn detect_dl_server_support() -> DlServerInfo {
+    let kernel_version = get_kernel_version();
+
+    // DL server requires kernel 7.0+
+    let supported = kernel_version
+        .as_ref()
+        .is_some_and(|v| v.at_least(7, 0));
+
+    // Check for ext_server interface in sysfs
+    let ext_server_available = Path::new("/sys/kernel/sched_ext/ext_server").exists()
+        || Path::new("/sys/kernel/sched_ext/dl_server").exists();
+
+    DlServerInfo {
+        supported,
+        ext_server_available,
+        kernel_version,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

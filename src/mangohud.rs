@@ -49,10 +49,10 @@ impl MangoHudExporter {
         let file = File::create(&stats_path)?;
         let mut writer = BufWriter::new(file);
 
-        // Write CSV header (MangoHud-compatible format)
+        // Write CSV header (MangoHud-compatible format with v0.3.0 percentiles)
         writeln!(
             writer,
-            "timestamp_ms,gaming_tasks,latency_avg_us,latency_max_us,jitter_us,late_pct,preemptions,ccd0_tasks,ccd1_tasks"
+            "timestamp_ms,gaming_tasks,latency_avg_us,latency_max_us,latency_p50_us,latency_p95_us,latency_p99_us,jitter_us,late_pct,preemptions,ccd0_tasks,ccd1_tasks"
         )?;
         writer.flush()?;
 
@@ -67,11 +67,14 @@ impl MangoHudExporter {
         if let Some(ref mut writer) = self.stats_file {
             writeln!(
                 writer,
-                "{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{}",
                 stats.timestamp_ms,
                 stats.gaming_tasks,
                 stats.latency_avg_us,
                 stats.latency_max_us,
+                stats.latency_p50_us,
+                stats.latency_p95_us,
+                stats.latency_p99_us,
                 stats.jitter_us,
                 stats.late_pct,
                 stats.preemptions,
@@ -129,11 +132,80 @@ pub struct SchedulerStats {
     pub gaming_tasks: u64,
     pub latency_avg_us: u64,
     pub latency_max_us: u64,
+    pub latency_p50_us: u64,
+    pub latency_p95_us: u64,
+    pub latency_p99_us: u64,
     pub jitter_us: u64,
     pub late_pct: u64,
     pub preemptions: u64,
     pub ccd0_tasks: u64,
     pub ccd1_tasks: u64,
+}
+
+/// Number of histogram buckets (must match BPF HIST_BUCKETS)
+pub const HIST_BUCKETS: usize = 16;
+
+/// Calculate latency percentiles from histogram buckets
+///
+/// The histogram uses buckets matching the BPF latency_to_bucket():
+/// - Bucket 0: 0-100us       - Bucket 8: 10-15ms
+/// - Bucket 1: 100-200us     - Bucket 9: 15-20ms
+/// - Bucket 2: 200-400us     - Bucket 10: 20-30ms
+/// - Bucket 3: 400-800us     - Bucket 11: 30-50ms
+/// - Bucket 4: 0.8-1.6ms     - Bucket 12: 50-75ms
+/// - Bucket 5: 1.6-3.2ms     - Bucket 13: 75-100ms
+/// - Bucket 6: 3.2-6.4ms     - Bucket 14: 100-150ms
+/// - Bucket 7: 6.4-10ms      - Bucket 15: >150ms
+pub fn calculate_latency_percentiles(hist: &[u64; HIST_BUCKETS]) -> (u64, u64, u64) {
+    let total: u64 = hist.iter().sum();
+    if total == 0 {
+        return (0, 0, 0);
+    }
+
+    let p50_threshold = total / 2;
+    let p95_threshold = (total * 95) / 100;
+    let p99_threshold = (total * 99) / 100;
+
+    // Bucket midpoints in microseconds (matching BPF latency_to_bucket)
+    const BUCKET_MIDPOINTS: [u64; HIST_BUCKETS] = [
+        50,     // 0-100us
+        150,    // 100-200us
+        300,    // 200-400us
+        600,    // 400-800us
+        1200,   // 0.8-1.6ms
+        2400,   // 1.6-3.2ms
+        4800,   // 3.2-6.4ms
+        8200,   // 6.4-10ms
+        12500,  // 10-15ms
+        17500,  // 15-20ms
+        25000,  // 20-30ms
+        40000,  // 30-50ms
+        62500,  // 50-75ms
+        87500,  // 75-100ms
+        125000, // 100-150ms
+        200000, // >150ms (capped estimate)
+    ];
+
+    let mut cumulative = 0u64;
+    let mut p50 = 0u64;
+    let mut p95 = 0u64;
+    let mut p99 = 0u64;
+
+    for (i, &count) in hist.iter().enumerate() {
+        cumulative += count;
+        if p50 == 0 && cumulative >= p50_threshold {
+            p50 = BUCKET_MIDPOINTS[i];
+        }
+        if p95 == 0 && cumulative >= p95_threshold {
+            p95 = BUCKET_MIDPOINTS[i];
+        }
+        if p99 == 0 && cumulative >= p99_threshold {
+            p99 = BUCKET_MIDPOINTS[i];
+            break;
+        }
+    }
+
+    (p50, p95, p99)
 }
 
 /// Check if MangoHud is running (by looking for mangohud processes)

@@ -32,6 +32,7 @@ char _license[] SEC("license") = "GPL";
 #define MAX_CPUS		256
 #define MAX_CCDS		8
 #define NSEC_PER_MSEC		1000000ULL
+#define NSEC_PER_SEC		1000000000ULL
 #define RINGBUF_SIZE		(256 * 1024)  /* 256KB ringbuf */
 
 /* DSQ IDs: 0 = fallback shared, 1-8 = per-CCD */
@@ -99,7 +100,10 @@ struct runtime_tunables {
 	u64 slice_ns;              /* Time slice duration */
 	u8  gaming_mode;           /* Prefer V-Cache CCD for gaming */
 	u8  work_mode;             /* Prefer freq CCD for productivity */
-	u8  _pad[6];               /* Padding for alignment */
+	u8  power_save_mode;       /* v0.3.0: 0=off, 1=balanced, 2=aggressive */
+	u8  tickless_enabled;      /* v0.3.0: Enable tickless mode */
+	u8  gpu_bound_mode;        /* v0.3.0: 0=balanced, 1=gpu_bound, 2=cpu_bound */
+	u8  _pad[3];               /* Padding for alignment */
 };
 
 /* Default values for runtime tunables */
@@ -169,6 +173,61 @@ u64 gaming_latency_count = 0;    /* Number of gaming latency samples */
 u64 gaming_latency_sum_sq = 0;   /* Sum of squared latencies (for variance) */
 u64 gaming_late_frames = 0;      /* Gaming tasks scheduled late (>1ms) */
 u64 gaming_preempted = 0;        /* Gaming tasks preempted by other tasks */
+/* v0.3.0: Wakeup frequency tracking */
+u64 nr_high_wakeup_tasks = 0;    /* Tasks with wakeup_freq > 50Hz */
+u64 nr_wakeup_penalties = 0;     /* Times high-freq wakeup penalty applied */
+/* v0.3.0: SMT contention avoidance */
+u64 nr_smt_contention_avoids = 0;  /* Times we avoided a contended SMT pair */
+/* v0.3.0: Futex-aware scheduling */
+u64 nr_futex_boosts = 0;           /* Times lock holder priority boost applied */
+/* v0.3.0: Core compaction / power mode */
+u64 nr_power_compactions = 0;      /* Times core compaction was applied */
+u64 system_util_pct = 50;          /* System utilization percentage */
+/* v0.3.0: Latency histograms (logarithmic buckets) */
+#define HIST_BUCKETS 16
+u64 gaming_latency_hist[HIST_BUCKETS] = {};  /* Latency histogram for gaming tasks */
+/* v0.3.0: GPU coordination */
+u64 nr_gpu_feeder_boosts = 0;      /* Times GPU feeder threads were boosted */
+
+/*
+ * v0.3.0: Task flags for special handling
+ */
+#define TASK_FLAG_FUTEX_HOLDER	(1 << 0)  /* Task currently holds a futex lock */
+
+/*
+ * v0.3.0: Power mode thresholds
+ */
+#define POWER_UTIL_LOW    30   /* Below 30% util: aggressive compaction */
+#define POWER_UTIL_MED    50   /* 30-50%: balanced compaction */
+#define POWER_UTIL_HIGH   70   /* Above 70%: no compaction */
+
+/*
+ * v0.3.0: Latency histogram helper
+ * Converts latency (ns) to bucket index using logarithmic scale:
+ * Bucket 0: 0-100us, 1: 100-200us, 2: 200-400us, 3: 400-800us, ...
+ * Bucket 15: >10ms
+ */
+static inline u32 latency_to_bucket(u64 lat_ns)
+{
+	u64 lat_us = lat_ns / 1000;
+
+	if (lat_us < 100)   return 0;    /* 0-100us */
+	if (lat_us < 200)   return 1;    /* 100-200us */
+	if (lat_us < 400)   return 2;    /* 200-400us */
+	if (lat_us < 800)   return 3;    /* 400-800us */
+	if (lat_us < 1600)  return 4;    /* 0.8-1.6ms */
+	if (lat_us < 3200)  return 5;    /* 1.6-3.2ms */
+	if (lat_us < 6400)  return 6;    /* 3.2-6.4ms */
+	if (lat_us < 10000) return 7;    /* 6.4-10ms */
+	if (lat_us < 15000) return 8;    /* 10-15ms */
+	if (lat_us < 20000) return 9;    /* 15-20ms */
+	if (lat_us < 30000) return 10;   /* 20-30ms */
+	if (lat_us < 50000) return 11;   /* 30-50ms */
+	if (lat_us < 75000) return 12;   /* 50-75ms */
+	if (lat_us < 100000) return 13;  /* 75-100ms */
+	if (lat_us < 150000) return 14;  /* 100-150ms */
+	return 15;                        /* >150ms */
+}
 
 /*
  * Per-CPU context - populated from userspace
@@ -245,6 +304,17 @@ struct {
 	__type(key, u32);
 	__type(value, u32);
 } container_pids SEC(".maps");
+
+/*
+ * v0.3.0: NUMA hints map - populated by userspace from game profiles
+ * Key: PID, Value: preferred NUMA node (0xFF = auto/unset)
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1024);
+	__type(key, u32);
+	__type(value, u32);
+} numa_hints SEC(".maps");
 
 /*
  * Cgroup classification - populated by userspace from cgroup path analysis
@@ -347,6 +417,10 @@ struct task_ctx {
 	u64 last_run_at;
 	u64 enqueue_at;			/* When task was enqueued (for latency tracking) */
 	u64 classification_time;	/* When was classification done */
+	/* v0.3.0: Wakeup frequency tracking */
+	u64 last_wakeup_at;		/* Timestamp of last wakeup */
+	u64 avg_wakeup_interval;	/* EWMA of inter-wakeup time (ns) */
+	u32 wakeup_freq_hz;		/* Calculated wakeup frequency (capped at 100Hz) */
 	u32 preferred_ccd;
 	u32 last_ccd;
 	u32 workload_class;		/* WORKLOAD_* type */
@@ -356,6 +430,7 @@ struct task_ctx {
 	bool is_gpu_feeder;		/* GPU-feeding thread (Vulkan/OpenGL) */
 	bool wants_vcache;
 	bool classification_valid;	/* Has been classified */
+	u8 flags;			/* v0.3.0: Task flags (futex holder, etc.) */
 };
 
 struct {
@@ -412,6 +487,38 @@ static inline bool get_work_mode(void)
 	u32 key = 0;
 	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
 	return rt ? rt->work_mode : false;
+}
+
+/*
+ * v0.3.0: Power save mode helper
+ * Returns: 0=off, 1=balanced, 2=aggressive
+ */
+static inline u8 get_power_save_mode(void)
+{
+	u32 key = 0;
+	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
+	return rt ? rt->power_save_mode : 0;
+}
+
+/*
+ * v0.3.0: Tickless mode helper
+ */
+static inline bool get_tickless_enabled(void)
+{
+	u32 key = 0;
+	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
+	return rt ? rt->tickless_enabled : false;
+}
+
+/*
+ * v0.3.0: GPU bound mode helper
+ * Returns: 0=balanced, 1=gpu_bound, 2=cpu_bound
+ */
+static inline u8 get_gpu_bound_mode(void)
+{
+	u32 key = 0;
+	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
+	return rt ? rt->gpu_bound_mode : 0;
 }
 
 /*
@@ -793,6 +900,43 @@ static u32 get_prefcore_ranking(s32 cpu)
 }
 
 /*
+ * v0.3.0: SMT Contention Detection
+ *
+ * Check if a CPU's SMT sibling is running a compute-heavy task (high burst time).
+ * Used to avoid placing latency-sensitive tasks on cores where the sibling
+ * is doing heavy computation, which causes cache thrashing and pipeline conflicts.
+ */
+static bool is_smt_contended(s32 cpu)
+{
+	struct cpu_ctx *cctx;
+	struct task_struct *sibling_task;
+	struct task_ctx *stctx;
+
+	if (!smt_enabled)
+		return false;
+
+	cctx = get_cpu_ctx(cpu);
+	if (!cctx || cctx->smt_sibling < 0)
+		return false;
+
+	/* Get the task running on SMT sibling */
+	sibling_task = __COMPAT_scx_bpf_cpu_curr(cctx->smt_sibling);
+	if (!sibling_task)
+		return false;
+
+	/* Idle task means no contention */
+	if (sibling_task->flags & PF_IDLE)
+		return false;
+
+	/* Check if sibling task is compute-heavy (burst time > 2x threshold) */
+	stctx = get_task_ctx(sibling_task);
+	if (!stctx)
+		return false;
+
+	return stctx->burst_time > (get_burst_threshold() * 2);
+}
+
+/*
  * Helper: Pick idle CPU from a specific CCD with SMT awareness
  *
  * When prefer_smt_idle is true, we prefer CPUs where the entire physical
@@ -859,9 +1003,12 @@ static s32 pick_idle_cpu_in_ccd(struct task_struct *p, u32 target_ccd, bool pref
 
 	/*
 	 * Second pass: find any idle CPU in the CCD, preferring high prefcore ranking
+	 * v0.3.0: Also prefer non-contended SMT pairs for latency-sensitive tasks
 	 */
 	best_cpu = -1;
 	best_ranking = 0;
+	s32 contended_cpu = -1;
+	u32 contended_ranking = 0;
 
 	bpf_for(cpu, 0, nr_cpus_possible) {
 		if (cpu >= MAX_CPUS)
@@ -875,17 +1022,40 @@ static s32 pick_idle_cpu_in_ccd(struct task_struct *p, u32 target_ccd, bool pref
 			continue;
 
 		u32 ranking = get_prefcore_ranking(cpu);
-		if (best_cpu < 0 || ranking > best_ranking) {
-			best_cpu = cpu;
-			best_ranking = ranking;
+		bool contended = is_smt_contended(cpu);
+
+		if (contended) {
+			/* Track best contended CPU as fallback */
+			if (contended_cpu < 0 || ranking > contended_ranking) {
+				contended_cpu = cpu;
+				contended_ranking = ranking;
+			}
+		} else {
+			/* Non-contended CPU is preferred */
+			if (best_cpu < 0 || ranking > best_ranking) {
+				best_cpu = cpu;
+				best_ranking = ranking;
+			}
 		}
 	}
 
-	/* Try to claim the best CPU we found */
+	/* Try non-contended CPU first */
 	if (best_cpu >= 0 && scx_bpf_test_and_clear_cpu_idle(best_cpu)) {
 		if (best_ranking > 0)
 			__sync_fetch_and_add(&nr_prefcore_placements, 1);
 		return best_cpu;
+	}
+
+	/* Fall back to contended CPU if no non-contended available */
+	if (contended_cpu >= 0 && scx_bpf_test_and_clear_cpu_idle(contended_cpu)) {
+		/* We're using a contended CPU, but had no choice */
+		if (best_cpu >= 0) {
+			/* We avoided contention by finding another CPU */
+			__sync_fetch_and_add(&nr_smt_contention_avoids, 1);
+		}
+		if (contended_ranking > 0)
+			__sync_fetch_and_add(&nr_prefcore_placements, 1);
+		return contended_cpu;
 	}
 
 	return -1;
@@ -1127,6 +1297,81 @@ s32 BPF_STRUCT_OPS(ghostbrew_select_cpu, struct task_struct *p,
 	tctx->wants_vcache = tctx->is_gaming || (tctx->is_interactive && gmode);
 
 	/*
+	 * v0.3.0: Core Compaction / Power Mode
+	 *
+	 * When power_save_mode is enabled and system utilization is low,
+	 * consolidate non-gaming tasks onto fewer CPUs to allow idle CPUs
+	 * to enter deeper C-states for power savings.
+	 *
+	 * Gaming/interactive tasks always bypass compaction.
+	 */
+	u8 pmode = get_power_save_mode();
+	if (pmode > 0 && !tctx->wants_vcache) {
+		u64 util = system_util_pct;
+		u32 active_cpus = nr_cpus_possible;
+
+		/* Calculate active CPU count based on utilization and mode */
+		if (pmode == 2 && util < POWER_UTIL_LOW) {
+			/* Aggressive: use 25% of CPUs */
+			active_cpus = nr_cpus_possible / 4;
+			if (active_cpus < 2)
+				active_cpus = 2;
+		} else if (util < POWER_UTIL_MED) {
+			/* Balanced: use 50% of CPUs */
+			active_cpus = nr_cpus_possible / 2;
+			if (active_cpus < 4)
+				active_cpus = 4;
+		} else if (util < POWER_UTIL_HIGH) {
+			/* Light compaction: use 75% of CPUs */
+			active_cpus = (nr_cpus_possible * 3) / 4;
+		}
+
+		/* Try to find idle CPU in the compacted range */
+		if (active_cpus < nr_cpus_possible) {
+			for (u32 c = 0; c < active_cpus && c < MAX_CPUS; c++) {
+				if (!bpf_cpumask_test_cpu(c, p->cpus_ptr))
+					continue;
+				if (scx_bpf_test_and_clear_cpu_idle(c)) {
+					__sync_fetch_and_add(&nr_power_compactions, 1);
+					scx_bpf_dsq_insert(p, SCX_DSQ_LOCAL, get_slice_ns(), 0);
+					__sync_fetch_and_add(&nr_direct_dispatched, 1);
+					return c;
+				}
+			}
+			/* No idle CPU in range, fall through to normal selection */
+		}
+	}
+
+	/*
+	 * v0.3.0: NUMA-aware placement from game profiles
+	 *
+	 * Check if userspace has specified a NUMA preference for this PID.
+	 * This allows per-game profiles to control NUMA placement.
+	 */
+	u32 pid = p->pid;
+	u32 *numa_pref = bpf_map_lookup_elem(&numa_hints, &pid);
+	if (numa_pref && *numa_pref < 255) {
+		u32 target_node = *numa_pref;
+
+		/* Try to find idle CPU in the target NUMA node */
+		for (u32 c = 0; c < nr_cpus_possible && c < MAX_CPUS; c++) {
+			if (!bpf_cpumask_test_cpu(c, p->cpus_ptr))
+				continue;
+
+			struct cpu_ctx *cctx = get_cpu_ctx(c);
+			if (!cctx || cctx->node != target_node)
+				continue;
+
+			if (scx_bpf_test_and_clear_cpu_idle(c)) {
+				scx_bpf_dsq_insert(p, SCX_DSQ_LOCAL, get_slice_ns(), 0);
+				__sync_fetch_and_add(&nr_direct_dispatched, 1);
+				return c;
+			}
+		}
+		/* No idle CPU in preferred NUMA node, fall through */
+	}
+
+	/*
 	 * Intel Hybrid: P-core/E-core aware scheduling
 	 */
 	if (is_intel_hybrid) {
@@ -1309,8 +1554,38 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 	tctx = get_task_ctx(p);
 
 	/* Store enqueue timestamp for latency tracking */
-	if (tctx)
-		tctx->enqueue_at = bpf_ktime_get_ns();
+	if (tctx) {
+		u64 now = bpf_ktime_get_ns();
+		tctx->enqueue_at = now;
+
+		/*
+		 * v0.3.0: Wakeup frequency tracking
+		 * Track inter-wakeup intervals to detect busyloop offenders
+		 */
+		if (enq_flags & SCX_ENQ_WAKEUP) {
+			if (tctx->last_wakeup_at > 0) {
+				u64 delta = now - tctx->last_wakeup_at;
+
+				/* EWMA: avg = (7 * avg + delta) / 8 */
+				if (tctx->avg_wakeup_interval == 0)
+					tctx->avg_wakeup_interval = delta;
+				else
+					tctx->avg_wakeup_interval =
+						(7 * tctx->avg_wakeup_interval + delta) >> 3;
+
+				/* Calculate frequency (capped at 100Hz) */
+				if (tctx->avg_wakeup_interval > 0) {
+					u64 freq = NSEC_PER_SEC / tctx->avg_wakeup_interval;
+					tctx->wakeup_freq_hz = freq > 100 ? 100 : (u32)freq;
+
+					/* Track high-frequency wakers */
+					if (tctx->wakeup_freq_hz > 50 && !tctx->is_gaming)
+						__sync_fetch_and_add(&nr_high_wakeup_tasks, 1);
+				}
+			}
+			tctx->last_wakeup_at = now;
+		}
+	}
 
 	/* Determine target CCD DSQ */
 	cpu = scx_bpf_task_cpu(p);
@@ -1362,6 +1637,24 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 		} else {
 			/* CPU hogs get penalized */
 			vtime = tctx->burst_time / 100;
+
+			/*
+			 * v0.3.0: Penalize high-frequency wakers (busyloop offenders)
+			 * Non-gaming tasks waking >50Hz get additional vtime penalty
+			 */
+			if (tctx->wakeup_freq_hz > 50) {
+				vtime += (u64)tctx->wakeup_freq_hz * 1000;
+				__sync_fetch_and_add(&nr_wakeup_penalties, 1);
+			}
+		}
+
+		/*
+		 * v0.3.0: Futex holder boost
+		 * Tasks holding locks get 2x priority boost (halve vtime)
+		 * to reduce lock contention impact on dependent tasks.
+		 */
+		if ((tctx->flags & TASK_FLAG_FUTEX_HOLDER) && vtime > 0) {
+			vtime = vtime >> 1;  /* 2x priority boost */
 		}
 	}
 
@@ -1420,6 +1713,27 @@ void BPF_STRUCT_OPS(ghostbrew_dispatch, s32 cpu, struct task_struct *prev)
 	/* Finally try fallback DSQ */
 	if (scx_bpf_dsq_move_to_local(FALLBACK_DSQ)) {
 		__sync_fetch_and_add(&nr_dispatched, 1);
+	}
+
+	/*
+	 * v0.3.0: Tickless Mode
+	 *
+	 * When tickless is enabled and no tasks are waiting,
+	 * grant infinite slice to reduce preemption overhead.
+	 * The timer tick will force finite slice when contention appears.
+	 */
+	if (get_tickless_enabled() && prev && !(prev->flags & PF_IDLE)) {
+		/* Check if any DSQs have waiting tasks */
+		bool has_waiting = false;
+		if (scx_bpf_dsq_nr_queued(local_dsq) > 0)
+			has_waiting = true;
+		if (!has_waiting && scx_bpf_dsq_nr_queued(FALLBACK_DSQ) > 0)
+			has_waiting = true;
+
+		/* Grant infinite slice if no contention */
+		if (!has_waiting) {
+			scx_bpf_task_set_slice(prev, SCX_SLICE_INF);
+		}
 	}
 }
 
@@ -1497,6 +1811,11 @@ void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 						   NSEC_PER_MSEC / 1000,  /* threshold in us */
 						   NULL);
 				}
+
+				/* v0.3.0: Record to latency histogram for percentile tracking */
+				u32 bucket = latency_to_bucket(latency);
+				if (bucket < HIST_BUCKETS)
+					__sync_fetch_and_add(&gaming_latency_hist[bucket], 1);
 			}
 
 			/* Reset enqueue_at to avoid double counting */
@@ -1642,6 +1961,30 @@ void BPF_STRUCT_OPS(ghostbrew_tick, struct task_struct *p)
 	if (!perf_state)
 		return;
 
+	/*
+	 * v0.3.0: Tickless starvation check
+	 *
+	 * If tickless mode is enabled and the current task has infinite slice
+	 * but tasks are waiting, force a finite slice to prevent starvation.
+	 */
+	if (get_tickless_enabled() && p && !(p->flags & PF_IDLE)) {
+		struct cpu_ctx *tick_cctx = get_cpu_ctx(cpu);
+		if (tick_cctx && p->scx.slice == SCX_SLICE_INF) {
+			u64 local_dsq = ccd_to_dsq(tick_cctx->ccd);
+			bool has_waiting = false;
+
+			if (scx_bpf_dsq_nr_queued(local_dsq) > 0)
+				has_waiting = true;
+			if (!has_waiting && scx_bpf_dsq_nr_queued(FALLBACK_DSQ) > 0)
+				has_waiting = true;
+
+			if (has_waiting) {
+				/* Force preemption by setting finite slice */
+				scx_bpf_task_set_slice(p, get_slice_ns());
+			}
+		}
+	}
+
 	/* Get current CPU performance level (0-1024 scale) */
 	perf_cur = scx_bpf_cpuperf_cur(cpu);
 	perf_state->perf_cur = perf_cur;
@@ -1682,6 +2025,22 @@ void BPF_STRUCT_OPS(ghostbrew_tick, struct task_struct *p)
 					   NULL);
 			}
 		}
+
+		/*
+		 * v0.3.0: Update system utilization for power mode
+		 * Calculate based on total tasks vs CPUs
+		 */
+		u64 total_tasks = 0;
+		for (u32 i = 0; i < nr_ccds && i < MAX_CCDS; i++) {
+			struct ccd_load *load = get_ccd_load(i);
+			if (load)
+				total_tasks += load->nr_tasks;
+		}
+		/* Utilization = (tasks / CPUs) * 100, clamped to 0-100 */
+		u64 util = (total_tasks * 100) / nr_cpus_possible;
+		if (util > 100)
+			util = 100;
+		system_util_pct = util;
 	}
 }
 
@@ -1747,6 +2106,59 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(ghostbrew_init)
 void BPF_STRUCT_OPS(ghostbrew_exit, struct scx_exit_info *ei)
 {
 	UEI_RECORD(uei, ei);
+}
+
+/*
+ * v0.3.0: Futex-Aware Scheduling Hooks
+ *
+ * These fexit hooks detect when tasks acquire or release futex locks.
+ * Lock holders get a priority boost to reduce lock contention impact on gaming.
+ *
+ * Note: The "?" prefix makes these optional - if the kernel doesn't export
+ * these symbols, the scheduler will still load without futex awareness.
+ */
+SEC("?fexit/__futex_wait")
+int BPF_PROG(ghostbrew_futex_wait, u32 *uaddr, unsigned int flags,
+	     u32 val, struct hrtimer_sleeper *to, u32 bitset, int ret)
+{
+	struct task_struct *p;
+	struct task_ctx *tctx;
+
+	/* ret == 0 means successfully acquired the futex */
+	if (ret != 0)
+		return 0;
+
+	p = bpf_get_current_task_btf();
+	if (!p)
+		return 0;
+
+	tctx = get_task_ctx(p);
+	if (tctx) {
+		tctx->flags |= TASK_FLAG_FUTEX_HOLDER;
+		__sync_fetch_and_add(&nr_futex_boosts, 1);
+	}
+	return 0;
+}
+
+SEC("?fexit/futex_wake")
+int BPF_PROG(ghostbrew_futex_wake, u32 *uaddr, unsigned int flags,
+	     int nr_wake, u32 bitset, int ret)
+{
+	struct task_struct *p;
+	struct task_ctx *tctx;
+
+	/* ret > 0 means we woke up at least one waiter, releasing the lock */
+	if (ret <= 0)
+		return 0;
+
+	p = bpf_get_current_task_btf();
+	if (!p)
+		return 0;
+
+	tctx = get_task_ctx(p);
+	if (tctx)
+		tctx->flags &= ~TASK_FLAG_FUTEX_HOLDER;
+	return 0;
 }
 
 /*
