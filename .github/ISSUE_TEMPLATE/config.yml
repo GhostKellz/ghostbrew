@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Support bundle workflow
+    url: https://github.com/ghostkellz/ghostbrew/blob/main/docs/support-bundle.md
+    about: Generate a support bundle and benchmark report before filing scheduler, topology, or Linux 7.0 issues.

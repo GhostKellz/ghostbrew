@@ -29,7 +29,7 @@ char _license[] SEC("license") = "GPL";
 /*
  * Constants
  */
-#define GHOSTBREW_VERSION	"0.2.1"
+#define GHOSTBREW_VERSION	"0.3.1"
 #define MAX_CPUS		256
 #define MAX_CCDS		8
 #define NSEC_PER_MSEC		1000000ULL
@@ -1776,21 +1776,14 @@ void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 					pstats->latency_max_ns = latency;
 			}
 
-			/* Track max latency (atomic max) */
-			u64 cur_max = latency_max_ns;
-			while (latency > cur_max) {
-				if (__sync_bool_compare_and_swap(&latency_max_ns, cur_max, latency))
-					break;
-				cur_max = latency_max_ns;
-			}
-
-			/* Track min latency (atomic min, 0 = not yet set) */
-			u64 cur_min = latency_min_ns;
-			while (cur_min == 0 || latency < cur_min) {
-				if (__sync_bool_compare_and_swap(&latency_min_ns, cur_min, latency))
-					break;
-				cur_min = latency_min_ns;
-			}
+			/*
+			 * Track global latency bounds with verifier-friendly best-effort updates.
+			 * Per-CPU stats remain precise; these global bounds are observational.
+			 */
+			if (latency > latency_max_ns)
+				latency_max_ns = latency;
+			if (latency_min_ns == 0 || latency < latency_min_ns)
+				latency_min_ns = latency;
 
 			/* Track gaming-specific latency and frame pacing */
 			if (tctx->is_gaming) {

@@ -1,0 +1,32 @@
+Source: scx-ghostbrew
+Section: admin
+Priority: optional
+Maintainer: ghostkellz <ckelley@ghostkellz.sh>
+Build-Depends: debhelper-compat (= 13),
+               rustc (>= 1.75),
+               cargo,
+               clang,
+               llvm,
+               libbpf-dev,
+               bpftool
+Standards-Version: 4.6.2
+Homepage: https://github.com/ghostkellz/ghostbrew
+Rules-Requires-Root: no
+
+Package: scx-ghostbrew
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, libbpf1
+Recommends: bash-completion, linux-image-cachyos
+Description: sched-ext BPF scheduler for AMD Zen5/X3D and Intel Hybrid
+ GhostBrew (scx_ghostbrew) is a custom sched-ext BPF scheduler designed
+ for AMD Zen4/Zen5 X3D processors and Intel 12th-14th gen hybrid CPUs.
+ .
+ Features:
+  - Per-CCD dispatch queues with topology-aware scheduling
+  - X3D V-Cache CCD detection and gaming task routing
+  - Intel hybrid P-core/E-core differentiation
+  - BORE-inspired burst detection for interactive prioritization
+  - AMD Prefcore integration for preferred core selection
+  - KVM/QEMU VM and container workload detection
+ .
+ Requires kernel 6.12+ with CONFIG_SCHED_CLASS_EXT=y.

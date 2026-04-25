@@ -100,7 +100,7 @@ Built in Rust with BPF, GhostBrew runs as a userspace scheduler that can be load
 
 - **ghost-vcache Coordination** — Syncs with V-Cache mode switching tool
 - **linux-ghost Kernel** — Designed to work with GHOST scheduler kernel patch
-- **Runtime Tunable** — Adjust parameters via sysfs without restart
+- **Runtime Tunable** — Adjust parameters through `/run/ghostbrew/control` without restart
 - **Graceful Fallback** — If GhostBrew crashes, EEVDF takes over seamlessly
 
 ---
@@ -126,17 +126,33 @@ cd ghostbrew
 cargo build --release
 ```
 
+### Install
+
+```bash
+# One-line installer
+curl -fsSL https://ghostbrew.cktech.sh | sudo bash
+
+# Or package/build locally and use the front-end CLI
+sudo ./target/x86_64-unknown-linux-gnu/release/ghostbrew --help
+```
+
 ### Run
 
 ```bash
 # Start GhostBrew scheduler
-sudo ./target/release/scx_ghostbrew
+sudo ./target/x86_64-unknown-linux-gnu/release/ghostbrew run
 
 # With gaming mode (V-Cache CCD preferred)
-sudo ./target/release/scx_ghostbrew --gaming
+sudo ./target/x86_64-unknown-linux-gnu/release/ghostbrew run --gaming
 
 # With verbose output
-sudo ./target/release/scx_ghostbrew -v
+sudo ./target/x86_64-unknown-linux-gnu/release/ghostbrew run -v
+
+# Generate a support bundle
+./target/x86_64-unknown-linux-gnu/release/ghostbrew support --json
+
+# Run a short benchmark workflow
+./target/x86_64-unknown-linux-gnu/release/ghostbrew benchmark --workload "cargo check -q"
 ```
 
 ### Systemd Service
@@ -161,30 +177,24 @@ systemctl status scx-ghostbrew
 
 ### Command Line Options
 
-```
-scx_ghostbrew [OPTIONS]
+```text
+ghostbrew <COMMAND>
 
-OPTIONS:
-    -g, --gaming          Gaming mode (prefer V-Cache CCD)
-    -p, --productivity    Productivity mode (prefer frequency CCD)
-    -a, --auto            Auto-detect workload (default)
-    -v, --verbose         Verbose logging
-    -s, --stats           Print scheduler statistics
-    --burst-threshold     Burst detection threshold (default: 2000000ns)
-    --migrate-cost        Cross-CCD migration cost (default: 500000ns)
+COMMANDS:
+    run [ARGS...]                        Run scx_ghostbrew with forwarded scheduler arguments
+    support [--json]                     Generate a support bundle under ~/.local/state/ghostbrew/
+    benchmark [--workload <CMD>]         Run a short benchmark workflow and write text/JSON reports
+    completions <SHELL>                  Generate shell completions for ghostbrew
 ```
 
 ### Runtime Tuning
 
 ```bash
-# View current settings
-cat /sys/kernel/sched_ext/ghostbrew/*
-
-# Adjust burst threshold
-echo 1500000 | sudo tee /sys/kernel/sched_ext/ghostbrew/burst_threshold_ns
-
-# Toggle gaming mode
-echo 1 | sudo tee /sys/kernel/sched_ext/ghostbrew/gaming_mode
+# Adjust tunables through the privileged control file
+sudo sh -c 'printf "%s\n" "burst_threshold_ns=1500000" > /run/ghostbrew/control'
+sudo sh -c 'printf "%s\n" "slice_ns=2500000" > /run/ghostbrew/control'
+sudo sh -c 'printf "%s\n" "gaming_mode=true" >> /run/ghostbrew/control'
+sudo sh -c 'printf "%s\n" "work_mode=false" >> /run/ghostbrew/control'
 ```
 
 ---
@@ -196,18 +206,20 @@ ghostbrew/
 ├── Cargo.toml               # Rust project config
 ├── src/
 │   ├── main.rs              # Entry point, CLI handling
-│   ├── scheduler.rs         # Core scheduler coordination
+│   ├── config.rs            # Configuration loading and defaults
 │   ├── topology.rs          # Zen5/X3D topology detection
-│   ├── burst.rs             # Burst tracking (BORE-inspired)
+│   ├── gaming.rs            # Workload and gaming-process detection
 │   ├── vcache.rs            # V-Cache CCD coordination
 │   └── bpf/
 │       ├── ghostbrew.bpf.c  # BPF scheduler logic
 │       └── vmlinux.h        # Kernel type definitions
 ├── scx-ghostbrew.service    # Systemd unit
 ├── docs/
-│   ├── ARCHITECTURE.md      # Deep dive on design
-│   ├── TUNING.md            # Performance tuning guide
-│   └── BENCHMARKS.md        # Benchmark results
+│   ├── architecture/        # Architecture docs
+│   ├── guides/              # Tuning and troubleshooting guides
+│   ├── features/            # Feature-specific docs
+│   ├── benchmarks/          # Benchmark example reports
+│   └── benchmarks.md        # Benchmark methodology
 └── archive/                 # Reference material (untracked)
 ```
 
@@ -255,7 +267,7 @@ GhostBrew automatically detects which CCD has V-Cache and routes tasks according
 
 ## Benchmarks
 
-See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed benchmark methodology and results.
+See [docs/benchmarks.md](docs/benchmarks.md) for detailed benchmark methodology and results.
 
 **Quick Stats (AMD Ryzen 9 7950X3D):**
 

@@ -11,6 +11,7 @@ use std::fs;
 
 /// Workload classification types (matches BPF side)
 pub const WORKLOAD_GAMING: u32 = 1;
+pub const WORKLOAD_BATCH: u32 = 3;
 pub const WORKLOAD_AI: u32 = 4;
 
 /// Gaming process patterns in executable paths
@@ -40,10 +41,16 @@ const AI_EXE_PATTERNS: &[&str] = &[
     "ollama", "llama", "pytorch", "python", // Many AI workloads run under python
 ];
 
+/// Build/dev tool patterns that benefit from freq-CCD placement on 9950X3D.
+const DEV_EXE_PATTERNS: &[&str] = &[
+    "cargo", "rustc", "clang", "clang++", "cc1", "cc1plus", "ld", "ld.lld", "lld", "mold", "ninja",
+    "cmake", "make", "gcc", "g++", "zig",
+];
+
 /// AI-related environment variables
 const AI_ENV_VARS: &[&str] = &["OLLAMA_", "CUDA_VISIBLE_DEVICES", "PYTORCH_", "TF_"];
 
-/// Scan /proc for gaming and AI processes
+/// Scan /proc for gaming, batch/dev, and AI processes
 /// Returns a map of PID -> workload class
 pub fn scan_gaming_pids() -> Result<Vec<(u32, u32)>> {
     let mut gaming_pids = Vec::new();
@@ -117,6 +124,14 @@ fn check_exe_path(pid: u32) -> Option<u32> {
         return Some(WORKLOAD_GAMING);
     }
 
+    // Check for dev/build patterns before broad AI handling.
+    for pattern in DEV_EXE_PATTERNS {
+        if exe_str.contains(pattern) {
+            debug!("PID {} detected as dev/batch via exe: {}", pid, exe_str);
+            return Some(WORKLOAD_BATCH);
+        }
+    }
+
     // Check for AI patterns
     for pattern in AI_EXE_PATTERNS {
         if exe_str.contains(pattern) {
@@ -182,6 +197,7 @@ pub fn get_child_pids(pid: u32) -> Vec<u32> {
 /// Gaming detector state for incremental updates
 pub struct GamingDetector {
     known_gaming_pids: HashSet<u32>,
+    known_batch_pids: HashSet<u32>,
     known_ai_pids: HashSet<u32>,
 }
 
@@ -189,6 +205,7 @@ impl GamingDetector {
     pub fn new() -> Self {
         Self {
             known_gaming_pids: HashSet::new(),
+            known_batch_pids: HashSet::new(),
             known_ai_pids: HashSet::new(),
         }
     }
@@ -199,12 +216,16 @@ impl GamingDetector {
         let current_scan = scan_gaming_pids()?;
 
         let mut current_gaming: HashSet<u32> = HashSet::new();
+        let mut current_batch: HashSet<u32> = HashSet::new();
         let mut current_ai: HashSet<u32> = HashSet::new();
 
         for (pid, class) in &current_scan {
             match *class {
                 WORKLOAD_GAMING => {
                     current_gaming.insert(*pid);
+                }
+                WORKLOAD_BATCH => {
+                    current_batch.insert(*pid);
                 }
                 WORKLOAD_AI => {
                     current_ai.insert(*pid);
@@ -218,6 +239,9 @@ impl GamingDetector {
         for pid in current_gaming.difference(&self.known_gaming_pids) {
             new_pids.push((*pid, WORKLOAD_GAMING));
         }
+        for pid in current_batch.difference(&self.known_batch_pids) {
+            new_pids.push((*pid, WORKLOAD_BATCH));
+        }
         for pid in current_ai.difference(&self.known_ai_pids) {
             new_pids.push((*pid, WORKLOAD_AI));
         }
@@ -227,12 +251,16 @@ impl GamingDetector {
         for pid in self.known_gaming_pids.difference(&current_gaming) {
             removed_pids.push(*pid);
         }
+        for pid in self.known_batch_pids.difference(&current_batch) {
+            removed_pids.push(*pid);
+        }
         for pid in self.known_ai_pids.difference(&current_ai) {
             removed_pids.push(*pid);
         }
 
         // Update state
         self.known_gaming_pids = current_gaming;
+        self.known_batch_pids = current_batch;
         self.known_ai_pids = current_ai;
 
         if !new_pids.is_empty() || !removed_pids.is_empty() {
@@ -247,8 +275,12 @@ impl GamingDetector {
     }
 
     /// Get counts for logging
-    pub fn counts(&self) -> (usize, usize) {
-        (self.known_gaming_pids.len(), self.known_ai_pids.len())
+    pub fn counts(&self) -> (usize, usize, usize) {
+        (
+            self.known_gaming_pids.len(),
+            self.known_batch_pids.len(),
+            self.known_ai_pids.len(),
+        )
     }
 }
 
@@ -288,5 +320,20 @@ mod tests {
         // This test just verifies the function runs without panicking
         let result = scan_gaming_pids();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dev_build_patterns_are_classified_as_batch() {
+        for exe in [
+            "/usr/bin/cargo",
+            "/usr/bin/rustc",
+            "/usr/bin/clang-19",
+            "/usr/bin/ld.lld",
+            "/usr/bin/mold",
+            "/usr/bin/ninja",
+        ] {
+            let exe = exe.to_lowercase();
+            assert!(DEV_EXE_PATTERNS.iter().any(|pattern| exe.contains(pattern)));
+        }
     }
 }

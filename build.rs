@@ -15,10 +15,10 @@ fn main() {
 
     let skel_path = out_dir.join("ghostbrew.skel.rs");
 
-    // Tell cargo to rerun if BPF source changes
+    // Tell cargo to rerun if BPF source or headers change
     println!("cargo:rerun-if-changed={}", BPF_SRC);
     println!("cargo:rerun-if-changed=src/bpf/vmlinux.h");
-    println!("cargo:rerun-if-changed=src/bpf/scx/common.bpf.h");
+    println!("cargo:rerun-if-changed=src/bpf/scx/"); // Track all sched-ext compat headers
     println!("cargo:rerun-if-changed=build.rs");
 
     // Build the BPF skeleton

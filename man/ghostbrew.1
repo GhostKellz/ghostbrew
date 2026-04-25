@@ -1,0 +1,51 @@
+.TH GHOSTBREW 1 "April 2026" "GhostBrew 0.3.1" "User Commands"
+.SH NAME
+ghostbrew \- GhostBrew support, benchmark, completion, and runtime front-end
+.SH SYNOPSIS
+.B ghostbrew
+.I COMMAND
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B ghostbrew
+provides a user-facing command surface for GhostBrew. It can launch the
+underlying
+.B scx_ghostbrew
+scheduler, generate support bundles, run short benchmark workflows, and emit
+shell completion scripts.
+.SH COMMANDS
+.TP
+.B run
+Execute
+.B scx_ghostbrew
+and forward remaining arguments directly to the scheduler runtime.
+.TP
+.B support
+Generate a support bundle under
+.I ~/.local/state/ghostbrew/support/
+by default. Use
+.B --json
+to also write a machine-readable JSON copy.
+.TP
+.B benchmark
+Run a short benchmark workload while GhostBrew stats are collected, then write
+text and JSON reports under
+.I ~/.local/state/ghostbrew/benchmarks/
+by default.
+.TP
+.B completions
+Generate shell completions for bash, zsh, fish, and other supported shells.
+.SH FILES
+.TP
+.I ~/.config/ghostbrew/config.toml
+User configuration file.
+.TP
+.I ~/.config/ghostbrew/profiles/
+User profile directory.
+.TP
+.I ~/.local/state/ghostbrew/support/
+Default support bundle output directory.
+.TP
+.I ~/.local/state/ghostbrew/benchmarks/
+Default benchmark output directory.
+.SH SEE ALSO
+.BR scx_ghostbrew (1)

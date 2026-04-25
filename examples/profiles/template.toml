@@ -45,5 +45,9 @@ burst_threshold_ns = 1500000
 # Default: 3000000 (3ms)
 slice_ns = 2500000
 
+# Optional mode overrides
+# gaming_mode = true
+# work_mode = false
+
 # Priority boost for main game thread (optional)
 # priority_boost = 0

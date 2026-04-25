@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a new scheduler feature, tuning mode, benchmark workflow, or hardware support improvement.
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What capability do you want added?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What workload, hardware, or scheduler problem does this solve?
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware target
+      placeholder: AMD Ryzen 9 9950X3D / Intel Core i9-14900K / generic
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired scheduler, benchmark, or support workflow behavior.

@@ -1,0 +1,14 @@
+# GhostBrew development/build workload profile
+# Useful on Zen 5 X3D systems like the 9950X3D where frequency mode should
+# steer compilers and linkers onto the boost CCD.
+
+name = "Development Build Tools"
+exe_name = "cargo"
+vcache_preference = "frequency"
+smt_preference = "allow_shared"
+
+[tunables]
+burst_threshold_ns = 2500000
+slice_ns = 4000000
+gaming_mode = false
+work_mode = true

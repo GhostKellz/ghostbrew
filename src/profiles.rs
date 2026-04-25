@@ -67,6 +67,14 @@ pub struct ProfileTunables {
     /// Priority boost for main game thread
     #[serde(default)]
     pub priority_boost: Option<i32>,
+
+    /// Override gaming mode when this profile is active
+    #[serde(default)]
+    pub gaming_mode: Option<bool>,
+
+    /// Override work mode when this profile is active
+    #[serde(default)]
+    pub work_mode: Option<bool>,
 }
 
 /// V-Cache preference for AMD X3D processors
@@ -266,12 +274,14 @@ smt_preference = "prefer_idle"
 
 [tunables]
 burst_threshold_ns = 1000000
+work_mode = true
 "#;
         let profile: GameProfile = toml::from_str(toml_str).unwrap();
         assert_eq!(profile.name, "Test Game");
         assert_eq!(profile.exe_name, Some("testgame.exe".to_string()));
         assert_eq!(profile.steam_appid, Some(12345));
         assert_eq!(profile.tunables.burst_threshold_ns, Some(1000000));
+        assert_eq!(profile.tunables.work_mode, Some(true));
         assert_eq!(profile.vcache_preference, VCachePreference::Cache);
         assert_eq!(profile.smt_preference, SmtPreference::PreferIdle);
     }

@@ -1,0 +1,63 @@
+scx-ghostbrew (0.3.1-1) unstable; urgency=medium
+
+  * Version alignment across Cargo.toml, CLI, BPF, and packaging
+  * Fixed clippy warnings for checked division patterns
+  * Added SECURITY.md and CONTRIBUTING.md
+  * Documentation restructure (lowercase filenames)
+  * Updated dependencies
+  * Fixed DL server detection to require sysfs interface
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Thu, 24 Apr 2026 21:30:00 -0500
+
+scx-ghostbrew (0.3.0-1) unstable; urgency=medium
+
+  * Wakeup frequency tracking with EWMA
+  * SMT contention avoidance
+  * Futex-aware scheduling with priority boost
+  * Core compaction / power save modes
+  * Tickless mode for reduced timer overhead
+  * Per-game latency histograms (P50/P95/P99)
+  * GPU scheduler coordination
+  * DL server integration (kernel 7.0+)
+  * NUMA-aware game profiles
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Mon, 31 Mar 2026 12:00:00 -0500
+
+scx-ghostbrew (0.2.2-1) unstable; urgency=medium
+
+  * Linux 7.0 kernel compatibility
+  * Synced sched-ext headers from kernel 7.0-rc
+  * Bumped libbpf-rs/libbpf-cargo to 0.26
+  * Updated BSS/rodata access for new API
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Wed, 19 Feb 2026 12:00:00 -0500
+
+scx-ghostbrew (0.2.1-1) unstable; urgency=medium
+
+  * Resolved clippy warnings for Rust 1.92
+  * Minor code quality improvements
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Wed, 15 Jan 2026 12:00:00 -0500
+
+scx-ghostbrew (0.2.0-1) unstable; urgency=medium
+
+  * AMD Ryzen 9950X3D (Zen5) support with 128MB V-Cache
+  * Intel Hybrid CPU support (P-core/E-core differentiation)
+  * Per-game profiles (25+ profiles for games, streaming, productivity)
+  * V-Cache coordination with ghost-vcache sysfs
+  * MangoHud integration for frame time analysis
+  * Runtime control interface at /run/ghostbrew/control
+  * TOML configuration system
+  * Event streaming via BPF ringbuf
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Sat, 11 Jan 2026 12:00:00 -0500
+
+scx-ghostbrew (0.1.0-1) unstable; urgency=low
+
+  * Initial release
+  * sched-ext BPF scheduler for AMD Zen5/X3D
+  * BORE-inspired burst detection
+  * V-Cache CCD routing for gaming
+  * VM, container, and AI workload support
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Tue, 17 Dec 2024 12:00:00 -0500

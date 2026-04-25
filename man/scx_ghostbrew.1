@@ -1,4 +1,4 @@
-.TH SCX_GHOSTBREW 1 "December 2025" "GhostBrew 0.1.0" "User Commands"
+.TH SCX_GHOSTBREW 1 "April 2026" "GhostBrew 0.3.1" "User Commands"
 .SH NAME
 scx_ghostbrew \- sched-ext BPF scheduler for AMD Zen5/X3D and Intel Hybrid processors
 .SH SYNOPSIS
@@ -18,8 +18,8 @@ optimal performance for gaming and desktop workloads.
 Gaming mode. Prefer V-Cache CCD on AMD X3D or P-cores on Intel hybrid for
 latency-sensitive tasks.
 .TP
-.BR \-p ", " \-\-productivity
-Productivity mode. Prefer frequency CCD on AMD or balanced core usage on Intel.
+.BR \-w ", " \-\-work
+Work mode. Prefer frequency CCD on AMD or balanced core usage on Intel.
 .TP
 .BR \-a ", " \-\-auto\-mode
 Auto-detect workload and adjust scheduling (default).
@@ -49,6 +49,9 @@ Print scheduler statistics periodically.
 .BR \-\-stats\-interval =\fISECS\fR
 Statistics display interval in seconds. Default: 2.
 .TP
+.BR \-b ", " \-\-benchmark
+Enable benchmark mode and export scheduler stats to a MangoHud-compatible CSV stream.
+.TP
 .BR \-v ", " \-\-verbose
 Enable verbose logging (info level).
 .TP
@@ -57,6 +60,10 @@ Enable debug logging (very verbose).
 .TP
 .BR \-\-completions =\fISHELL\fR
 Generate shell completions for the specified shell (bash, zsh, fish, powershell).
+.TP
+.BR \-\-analyze\-frametime [=\fIPATH\fR]
+Analyze a MangoHud frame time log without loading the scheduler. If no path is provided,
+the newest available MangoHud log is used.
 .TP
 .BR \-h ", " \-\-help
 Print help information.
@@ -115,6 +122,11 @@ System-wide game profiles.
 .I ~/.config/ghostbrew/profiles/*.toml
 User game profiles.
 .TP
+.I /run/ghostbrew/control
+Privileged runtime tuning interface. The file is created mode 0600 and accepts
+newline-separated commands such as burst_threshold_ns, slice_ns, gaming_mode,
+and work_mode.
+.TP
 .I /sys/kernel/sched_ext/
 sched-ext kernel interface (must exist for scheduler to load).
 .SH EXAMPLES
@@ -125,8 +137,14 @@ Run in gaming mode with statistics:
 Run with custom burst threshold:
 .B sudo scx_ghostbrew --burst-threshold 1500000
 .TP
+Run in work mode:
+.B sudo scx_ghostbrew --work
+.TP
 Run on Intel with aggressive E-core offload:
 .B sudo scx_ghostbrew --ecore-offload aggressive
+.TP
+Analyze a MangoHud frame time log without loading the scheduler:
+.B scx_ghostbrew --analyze-frametime mangohud.csv
 .TP
 Generate zsh completions:
 .B scx_ghostbrew --completions zsh > _scx_ghostbrew
@@ -156,4 +174,4 @@ Project: https://github.com/ghostkellz/ghostbrew
 .SH AUTHOR
 ghostkellz <ckelley@ghostkellz.sh>
 .SH LICENSE
-GPL-2.0-only
+MIT for userspace components; GPL-2.0 applies to the BPF program loaded into the kernel.

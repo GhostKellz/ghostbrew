@@ -258,36 +258,12 @@ src/bpf/scx/
 
 ### API Version Handling
 
-The compat layer handles kernel API evolution transparently:
+See the source tree under `src/bpf/scx/` for the active compat layer.
 
-| API | Old (≤6.18) | New (6.19+) | Compat Strategy |
-|-----|-------------|-------------|-----------------|
-| `scx_bpf_dsq_insert()` | void return | bool return | Runtime detection |
-| `scx_bpf_dsq_insert_vtime()` | 5 scalar args | Struct-packed | Inline wrapper |
-| `scx_bpf_select_cpu_and()` | 5 scalar args | Struct-packed | Inline wrapper |
-| `scx_bpf_reenqueue_local()` | cpu_release only | Anywhere | Version suffix |
-
-### vmlinux.h Management
+### `vmlinux.h` Management
 
 The `vmlinux.h` file is generated from kernel BTF:
 
 ```bash
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/bpf/vmlinux.h
 ```
-
-**Important**: Some extern declarations must be filtered to avoid conflicts with compat inline wrappers. The filtered functions are those that `compat.bpf.h` provides wrapper implementations for.
-
-### Supported Kernel Versions
-
-| Version | Status | Notes |
-|---------|--------|-------|
-| 6.12-6.18 | Supported | Original sched-ext API |
-| 6.19 | Supported | DL server, bool returns, struct args |
-| 7.0-rc | Supported | Full compat layer coverage |
-
-## Future Directions
-
-- GPU scheduler coordination (NVIDIA/AMD)
-- Power efficiency modes
-- Enhanced frame-pacing detection
-- Cross-process affinity groups

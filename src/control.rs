@@ -70,12 +70,15 @@ impl ControlInterface {
 "#;
         fs::write(&self.control_file, usage).context("Failed to create control file")?;
 
-        // Set permissions (world-writable for easy access)
+        // Restrict runtime tuning to privileged users.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = fs::Permissions::from_mode(0o666);
-            fs::set_permissions(&self.control_file, perms).ok();
+            let dir_perms = fs::Permissions::from_mode(0o755);
+            fs::set_permissions(&self.control_dir, dir_perms).ok();
+
+            let file_perms = fs::Permissions::from_mode(0o600);
+            fs::set_permissions(&self.control_file, file_perms).ok();
         }
 
         info!("Control interface: {:?}", self.control_file);

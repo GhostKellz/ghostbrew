@@ -1,0 +1,127 @@
+name: Bug report
+description: Report scheduler failures, Linux 7.0 issues, topology problems, or hardware-specific regressions.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please attach a support bundle when possible.
+
+        Recommended commands:
+
+        ```bash
+        bash scripts/benchmark-9950x3d-dev.sh
+        bash scripts/support-bundle.sh
+        ```
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+      placeholder: Short description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, commands, or actions that reproduce the issue.
+      placeholder: |
+        1. Boot into ...
+        2. Run scx_ghostbrew with ...
+        3. Start workload ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: GhostBrew version
+      placeholder: scx_ghostbrew 0.3.1
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: Arch Linux / CachyOS / Fedora / Debian
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version
+      placeholder: 7.0.1-1-cachyos-lto
+    validations:
+      required: true
+
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU model
+      placeholder: AMD Ryzen 9 9950X3D / Intel Core i9-14900K
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scheduler_state
+    attributes:
+      label: Scheduler state during issue
+      options:
+        - scx_ghostbrew attached
+        - sched_ext enabled with another scheduler
+        - sched_ext disabled
+        - not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vcache_mode
+    attributes:
+      label: ghost-vcache / X3D mode
+      options:
+        - cache
+        - frequency
+        - unknown / not applicable
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and attachments
+      description: Mention the attached support bundle and any benchmark report output.
+      placeholder: |
+        - Attached support bundle
+        - Attached benchmark_results/9950x3d-dev-report.json
+        - Relevant dmesg lines:
+          ...
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: What changed before this started?
+      description: Kernel update, scheduler change, BIOS update, package update, etc.
+      placeholder: |
+        - upgraded to Linux 7.0.x
+        - switched ghost-vcache mode
+        - updated GhostBrew

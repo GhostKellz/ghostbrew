@@ -41,7 +41,7 @@ const SCHEDULER_NAME: &str = "ghostbrew";
 #[derive(Parser, Debug)]
 #[command(name = "scx_ghostbrew")]
 #[command(author = "ghostkellz <ckelley@ghostkellz.sh>")]
-#[command(version = "0.1.0")]
+#[command(version = "0.3.1")]
 #[command(
     about = "sched-ext BPF scheduler optimized for AMD Zen4/Zen5 X3D and Intel Hybrid processors"
 )]
@@ -233,7 +233,7 @@ impl<'a> Scheduler<'a> {
         };
 
         // Determine gaming mode and work mode
-        let (gaming_mode, work_mode) = if args.gaming {
+        let (mut gaming_mode, mut work_mode) = if args.gaming {
             if topology.is_intel_hybrid {
                 info!("Mode: Gaming (P-cores preferred)");
             } else {
@@ -274,6 +274,19 @@ impl<'a> Scheduler<'a> {
         // Initialize V-Cache controller (ghost-vcache integration)
         let mut vcache_controller = vcache::VCacheController::default();
         if vcache_controller.is_available() {
+            if !args.gaming && !args.work && topology.asymmetric_ccd_boost {
+                let (vcache_gaming_mode, vcache_work_mode) =
+                    vcache_controller.current_mode().to_scheduler_modes();
+                gaming_mode = vcache_gaming_mode;
+                work_mode = vcache_work_mode;
+                info!(
+                    "V-Cache: initial mode {} -> gaming_mode={}, work_mode={}",
+                    vcache_controller.current_mode(),
+                    gaming_mode,
+                    work_mode
+                );
+            }
+
             // Set strategy from config
             if config.is_vcache_auto_switching() {
                 vcache_controller.set_strategy(vcache::SwitchingStrategy::Automatic {
@@ -673,15 +686,19 @@ impl<'a> Scheduler<'a> {
         tunables: &profiles::ProfileTunables,
     ) {
         // Only update if profile specifies custom values
-        if tunables.burst_threshold_ns.is_none() && tunables.slice_ns.is_none() {
+        if tunables.burst_threshold_ns.is_none()
+            && tunables.slice_ns.is_none()
+            && tunables.gaming_mode.is_none()
+            && tunables.work_mode.is_none()
+        {
             return;
         }
 
         if let Err(e) = self.update_runtime_tunables(
             tunables.burst_threshold_ns,
             tunables.slice_ns,
-            None, // Don't change gaming_mode
-            None, // Don't change work_mode
+            tunables.gaming_mode,
+            tunables.work_mode,
         ) {
             warn!(
                 "Failed to apply profile tunables for '{}': {}",
@@ -689,8 +706,12 @@ impl<'a> Scheduler<'a> {
             );
         } else {
             info!(
-                "Applied profile '{}' tunables: burst={:?}ns, slice={:?}ns",
-                profile_name, tunables.burst_threshold_ns, tunables.slice_ns
+                "Applied profile '{}' tunables: burst={:?}ns, slice={:?}ns, gaming={:?}, work={:?}",
+                profile_name,
+                tunables.burst_threshold_ns,
+                tunables.slice_ns,
+                tunables.gaming_mode,
+                tunables.work_mode
             );
         }
     }
@@ -852,9 +873,12 @@ impl<'a> Scheduler<'a> {
                     }
                 }
 
-                let (gaming, ai) = self.gaming_detector.counts();
-                if gaming > 0 || ai > 0 {
-                    debug!("Gaming PIDs: {}, AI PIDs: {}", gaming, ai);
+                let (gaming, batch, ai) = self.gaming_detector.counts();
+                if gaming > 0 || batch > 0 || ai > 0 {
+                    debug!(
+                        "Gaming PIDs: {}, dev/batch PIDs: {}, AI PIDs: {}",
+                        gaming, batch, ai
+                    );
                 }
             }
             Err(e) => {
@@ -989,7 +1013,7 @@ impl<'a> Scheduler<'a> {
 
     /// Update EPP hints based on active workloads
     fn update_epp_hints(&mut self) {
-        let (gaming_count, _ai_count) = self.gaming_detector.counts();
+        let (gaming_count, batch_count, _ai_count) = self.gaming_detector.counts();
         let gpu_active = self.gpu_monitor.any_gpu_active();
 
         // When gaming is active and GPU is in D0, boost preferred cores
@@ -1001,6 +1025,20 @@ impl<'a> Scheduler<'a> {
                 }
             }
         }
+
+        // On dual-CCD Zen 5 X3D systems like the 9950X3D, frequency mode should
+        // nudge prefcores toward boost-friendly behavior for build/dev workloads.
+        if self.topology.asymmetric_ccd_boost
+            && self.vcache_controller.current_mode() == vcache::VCacheMode::Frequency
+            && batch_count > 0
+        {
+            for &cpu in &self.prefcore.preferred_cpus {
+                if let Err(e) = self.epp_manager.set_epp(cpu, "performance") {
+                    debug!("Failed to set freq-mode EPP for CPU {}: {}", cpu, e);
+                }
+            }
+        }
+
         // Note: EPP is automatically restored on shutdown via EppManager::drop
     }
 
@@ -1012,15 +1050,17 @@ impl<'a> Scheduler<'a> {
 
         // Check for mode changes from ghost-vcache
         if let Some(new_mode) = self.vcache_controller.poll_changes() {
-            let gaming_mode = new_mode.to_gaming_mode();
+            let (gaming_mode, work_mode) = new_mode.to_scheduler_modes();
             info!(
-                "V-Cache mode changed to {} (gaming_mode={})",
-                new_mode, gaming_mode
+                "V-Cache mode changed to {} (gaming_mode={}, work_mode={})",
+                new_mode, gaming_mode, work_mode
             );
 
-            // Update runtime tunables to reflect new mode
-            if let Err(e) = self.update_runtime_tunables(None, None, Some(gaming_mode), None) {
-                warn!("Failed to update gaming_mode from V-Cache: {}", e);
+            // Keep GhostBrew's Zen 5 X3D fast paths aligned with ghost-vcache mode.
+            if let Err(e) =
+                self.update_runtime_tunables(None, None, Some(gaming_mode), Some(work_mode))
+            {
+                warn!("Failed to sync runtime modes from V-Cache state: {}", e);
             }
         }
 
@@ -1085,6 +1125,27 @@ impl<'a> Scheduler<'a> {
             "  Dispatched: {} (direct: {})",
             bss.nr_dispatched, bss.nr_direct_dispatched
         );
+        println!(
+            "  Modes: gaming={} work={}",
+            if self.args.gaming {
+                "forced"
+            } else if self.vcache_controller.is_available()
+                && self.vcache_controller.current_mode() == vcache::VCacheMode::Cache
+            {
+                "on"
+            } else {
+                "off"
+            },
+            if self.args.work {
+                "forced"
+            } else if self.vcache_controller.is_available()
+                && self.vcache_controller.current_mode() == vcache::VCacheMode::Frequency
+            {
+                "on"
+            } else {
+                "off"
+            }
+        );
         println!("  Gaming tasks: {}", bss.nr_gaming_tasks);
         println!("  Interactive tasks: {}", bss.nr_interactive_tasks);
         println!("  V-Cache migrations: {}", bss.nr_vcache_migrations);
@@ -1096,8 +1157,12 @@ impl<'a> Scheduler<'a> {
         println!("  Compaction overflows: {}", bss.nr_compaction_overflows);
         println!("  Preempt kicks: {}", bss.nr_preempt_kicks);
         // Scheduling latency stats
-        if bss.latency_count > 0 {
-            let avg_latency_us = bss.latency_sum_ns / bss.latency_count / 1000;
+        let avg_latency_us = bss
+            .latency_sum_ns
+            .checked_div(bss.latency_count)
+            .unwrap_or(0)
+            / 1000;
+        if avg_latency_us > 0 {
             let min_latency_us = bss.latency_min_ns / 1000;
             let max_latency_us = bss.latency_max_ns / 1000;
             println!(
@@ -1105,12 +1170,23 @@ impl<'a> Scheduler<'a> {
                 avg_latency_us, min_latency_us, max_latency_us
             );
             // Gaming latency and frame pacing if we have gaming tasks
-            if bss.gaming_latency_count > 0 {
-                let gaming_avg_us = bss.gaming_latency_sum_ns / bss.gaming_latency_count / 1000;
+            let gaming_avg_us = bss
+                .gaming_latency_sum_ns
+                .checked_div(bss.gaming_latency_count)
+                .unwrap_or(0)
+                / 1000;
+            if gaming_avg_us > 0 {
                 // Calculate jitter (standard deviation) from sum of squares
                 // Variance = E[X^2] - E[X]^2 = (sum_sq/n) - (sum/n)^2
-                let mean_us = bss.gaming_latency_sum_ns / bss.gaming_latency_count / 1000;
-                let mean_sq = bss.gaming_latency_sum_sq / bss.gaming_latency_count;
+                let mean_us = bss
+                    .gaming_latency_sum_ns
+                    .checked_div(bss.gaming_latency_count)
+                    .unwrap_or(0)
+                    / 1000;
+                let mean_sq = bss
+                    .gaming_latency_sum_sq
+                    .checked_div(bss.gaming_latency_count)
+                    .unwrap_or(0);
                 let variance = mean_sq.saturating_sub(mean_us * mean_us);
                 let jitter_us = (variance as f64).sqrt() as u64;
                 println!(
@@ -1118,11 +1194,9 @@ impl<'a> Scheduler<'a> {
                     gaming_avg_us, jitter_us, bss.gaming_latency_count
                 );
                 // Frame pacing stats
-                let late_pct = if bss.gaming_latency_count > 0 {
-                    (bss.gaming_late_frames * 100) / bss.gaming_latency_count
-                } else {
-                    0
-                };
+                let late_pct = (bss.gaming_late_frames * 100)
+                    .checked_div(bss.gaming_latency_count)
+                    .unwrap_or(0);
                 if bss.gaming_late_frames > 0 || bss.gaming_preempted > 0 {
                     println!(
                         "  Frame pacing: {}% late (>1ms), {} preemptions",
@@ -1256,15 +1330,22 @@ impl<'a> Scheduler<'a> {
         };
 
         // Calculate jitter from sum of squares
-        let (jitter_us, late_pct) = if bss.gaming_latency_count > 0 {
-            let mean_us = bss.gaming_latency_sum_ns / bss.gaming_latency_count / 1000;
-            let mean_sq = bss.gaming_latency_sum_sq / bss.gaming_latency_count;
+        let (jitter_us, late_pct) = {
+            let mean_us = bss
+                .gaming_latency_sum_ns
+                .checked_div(bss.gaming_latency_count)
+                .unwrap_or(0)
+                / 1000;
+            let mean_sq = bss
+                .gaming_latency_sum_sq
+                .checked_div(bss.gaming_latency_count)
+                .unwrap_or(0);
             let variance = mean_sq.saturating_sub(mean_us * mean_us);
             let jitter = (variance as f64).sqrt() as u64;
-            let late = (bss.gaming_late_frames * 100) / bss.gaming_latency_count;
+            let late = (bss.gaming_late_frames * 100)
+                .checked_div(bss.gaming_latency_count)
+                .unwrap_or(0);
             (jitter, late)
-        } else {
-            (0, 0)
         };
 
         // Calculate latency percentiles from histogram
@@ -1276,11 +1357,11 @@ impl<'a> Scheduler<'a> {
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
             gaming_tasks: bss.nr_gaming_tasks,
-            latency_avg_us: if bss.latency_count > 0 {
-                bss.latency_sum_ns / bss.latency_count / 1000
-            } else {
-                0
-            },
+            latency_avg_us: bss
+                .latency_sum_ns
+                .checked_div(bss.latency_count)
+                .unwrap_or(0)
+                / 1000,
             latency_max_us: bss.latency_max_ns / 1000,
             latency_p50_us: p50,
             latency_p95_us: p95,

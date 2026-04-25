@@ -1,0 +1,8 @@
+{
+  "vcache_mode": "frequency",
+  "enqueued": "89003",
+  "interactive_tasks": "88863",
+  "prefcore_placements": "36992",
+  "freq_ccd_placements": "29690",
+  "log_file": "/tmp/ghostbrew-9950x3d-dev.log"
+}

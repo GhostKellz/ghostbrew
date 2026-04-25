@@ -7,6 +7,7 @@
 use crate::intel::{self, IntelHybridInfo};
 use anyhow::{Context, Result};
 use log::debug;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -300,6 +301,7 @@ fn detect_intel_topology(
 
 /// Detect per-CPU topology (CCD, CCX, NUMA node)
 fn detect_cpu_topology(nr_cpus: u32) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    let amd_layout = detect_amd_ccd_ccx_layout(nr_cpus);
     let mut cpu_to_ccd = vec![0u32; nr_cpus as usize];
     let mut cpu_to_ccx = vec![0u32; nr_cpus as usize];
     let mut cpu_to_node = vec![0u32; nr_cpus as usize];
@@ -307,36 +309,150 @@ fn detect_cpu_topology(nr_cpus: u32) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
     for cpu in 0..nr_cpus {
         let base = format!("/sys/devices/system/cpu/cpu{}/topology", cpu);
 
-        // Read physical package ID (socket/die)
-        let _die_id = read_topology_file(&format!("{}/die_id", base))
-            .or_else(|_| read_topology_file(&format!("{}/physical_package_id", base)))
-            .unwrap_or(0);
-
-        // Read cluster ID (CCX on Zen)
-        let cluster_id = read_topology_file(&format!("{}/cluster_id", base)).unwrap_or(0);
-
-        // For AMD Zen, we can approximate CCD from core_id ranges
-        // Typically: CCD0 = cores 0-7, CCD1 = cores 8-15 (for 16-core)
+        let die_id = read_topology_file(&format!("{}/die_id", base)).ok();
+        let cluster_id = read_topology_file(&format!("{}/cluster_id", base)).ok();
         let core_id = read_topology_file(&format!("{}/core_id", base)).unwrap_or(cpu);
 
-        // Heuristic: cores 0-7 = CCD0, 8-15 = CCD1, etc.
-        // This works for most Zen4/Zen5 layouts
-        let ccd = core_id / 8;
+        let (ccd, ccx) = amd_layout
+            .as_ref()
+            .map(|layout| {
+                (
+                    layout.cpu_to_ccd[cpu as usize],
+                    layout.cpu_to_ccx[cpu as usize],
+                )
+            })
+            .unwrap_or_else(|| {
+                // Final fallback heuristic: cores 0-7 = CCD0, 8-15 = CCD1, etc.
+                let ccd = core_id / 8;
+                let ccx = cluster_id.unwrap_or(ccd);
+                (ccd, ccx)
+            });
 
         cpu_to_ccd[cpu as usize] = ccd;
-        cpu_to_ccx[cpu as usize] = cluster_id;
+        cpu_to_ccx[cpu as usize] = ccx;
 
         // NUMA node
         let node = detect_cpu_node(cpu).unwrap_or(0);
         cpu_to_node[cpu as usize] = node;
 
         debug!(
-            "CPU {}: CCD={}, CCX={}, Node={}",
-            cpu, ccd, cluster_id, node
+            "CPU {}: CCD={}, CCX={}, Node={} (die_id={:?}, cluster_id={:?})",
+            cpu, ccd, ccx, node, die_id, cluster_id
         );
     }
 
     Ok((cpu_to_ccd, cpu_to_ccx, cpu_to_node))
+}
+
+struct AmdTopologyLayout {
+    cpu_to_ccd: Vec<u32>,
+    cpu_to_ccx: Vec<u32>,
+}
+
+#[derive(Clone, Debug)]
+struct AmdCpuTopologySample {
+    die_cpus_list: Option<String>,
+    die_id: Option<u32>,
+    cluster_id: Option<u32>,
+}
+
+fn detect_amd_ccd_ccx_layout(nr_cpus: u32) -> Option<AmdTopologyLayout> {
+    let samples = read_amd_topology_samples(nr_cpus)?;
+    layout_from_samples(&samples)
+}
+
+fn read_amd_topology_samples(nr_cpus: u32) -> Option<Vec<AmdCpuTopologySample>> {
+    let mut samples = Vec::with_capacity(nr_cpus as usize);
+
+    for cpu in 0..nr_cpus {
+        let base = format!("/sys/devices/system/cpu/cpu{}/topology", cpu);
+        samples.push(AmdCpuTopologySample {
+            die_cpus_list: fs::read_to_string(format!("{}/die_cpus_list", base)).ok(),
+            die_id: read_topology_file(&format!("{}/die_id", base)).ok(),
+            cluster_id: read_topology_file(&format!("{}/cluster_id", base)).ok(),
+        });
+    }
+
+    Some(samples)
+}
+
+fn layout_from_samples(samples: &[AmdCpuTopologySample]) -> Option<AmdTopologyLayout> {
+    let nr_cpus = u32::try_from(samples.len()).ok()?;
+    let mut cpu_to_ccd = vec![0u32; nr_cpus as usize];
+    let mut cpu_to_ccx = vec![0u32; nr_cpus as usize];
+
+    if populate_layout_from_die_cpu_lists(samples, &mut cpu_to_ccd, &mut cpu_to_ccx) {
+        return Some(AmdTopologyLayout {
+            cpu_to_ccd,
+            cpu_to_ccx,
+        });
+    }
+
+    if populate_layout_from_die_ids(samples, &mut cpu_to_ccd, &mut cpu_to_ccx) {
+        return Some(AmdTopologyLayout {
+            cpu_to_ccd,
+            cpu_to_ccx,
+        });
+    }
+
+    None
+}
+
+fn populate_layout_from_die_cpu_lists(
+    samples: &[AmdCpuTopologySample],
+    cpu_to_ccd: &mut [u32],
+    cpu_to_ccx: &mut [u32],
+) -> bool {
+    let mut die_groups: BTreeMap<String, u32> = BTreeMap::new();
+    let mut saw_group = false;
+
+    for (cpu, sample) in samples.iter().enumerate() {
+        let Some(group) = sample.die_cpus_list.as_ref() else {
+            return false;
+        };
+
+        let normalized = normalize_cpu_list(group);
+        if normalized.is_empty() {
+            return false;
+        }
+
+        let next_id = die_groups.len() as u32;
+        let ccd = *die_groups.entry(normalized).or_insert(next_id);
+        cpu_to_ccd[cpu] = ccd;
+        cpu_to_ccx[cpu] = sanitize_cluster_id(sample.cluster_id).unwrap_or(ccd);
+        saw_group = true;
+    }
+
+    saw_group && die_groups.len() > 1
+}
+
+fn populate_layout_from_die_ids(
+    samples: &[AmdCpuTopologySample],
+    cpu_to_ccd: &mut [u32],
+    cpu_to_ccx: &mut [u32],
+) -> bool {
+    let mut die_groups: BTreeMap<u32, u32> = BTreeMap::new();
+
+    for (cpu, sample) in samples.iter().enumerate() {
+        let Some(die_id) = sample.die_id else {
+            return false;
+        };
+
+        let next_id = die_groups.len() as u32;
+        let ccd = *die_groups.entry(die_id).or_insert(next_id);
+        cpu_to_ccd[cpu] = ccd;
+        cpu_to_ccx[cpu] = sanitize_cluster_id(sample.cluster_id).unwrap_or(ccd);
+    }
+
+    die_groups.len() > 1
+}
+
+fn sanitize_cluster_id(cluster_id: Option<u32>) -> Option<u32> {
+    cluster_id.and_then(|id| (id != u32::MAX).then_some(id))
+}
+
+fn normalize_cpu_list(list: &str) -> String {
+    list.trim().replace(' ', "")
 }
 
 /// Read a topology file and parse as u32
@@ -502,12 +618,13 @@ pub struct DlServerInfo {
 pub fn detect_dl_server_support() -> DlServerInfo {
     let kernel_version = get_kernel_version();
 
-    // DL server requires kernel 7.0+
-    let supported = kernel_version.as_ref().is_some_and(|v| v.at_least(7, 0));
-
     // Check for ext_server interface in sysfs
     let ext_server_available = Path::new("/sys/kernel/sched_ext/ext_server").exists()
         || Path::new("/sys/kernel/sched_ext/dl_server").exists();
+
+    // DL server requires kernel 7.0+ AND the sysfs interface must be present
+    let supported =
+        ext_server_available && kernel_version.as_ref().is_some_and(|v| v.at_least(7, 0));
 
     DlServerInfo {
         supported,
@@ -540,6 +657,79 @@ mod tests {
         assert!(!cpu_in_list(8, "0-7"));
         assert!(cpu_in_list(16, "0-7,16-23"));
         assert!(cpu_in_list(5, "5"));
+    }
+
+    #[test]
+    fn test_normalize_cpu_list() {
+        assert_eq!(normalize_cpu_list("0-7, 16-23\n"), "0-7,16-23");
+        assert_eq!(normalize_cpu_list(" 8-15,24-31 "), "8-15,24-31");
+    }
+
+    #[test]
+    fn test_layout_from_die_cpu_list_fixtures() {
+        let samples = vec![
+            AmdCpuTopologySample {
+                die_cpus_list: Some("0-7,16-23\n".to_string()),
+                die_id: Some(0),
+                cluster_id: Some(u32::MAX),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: Some("0-7,16-23\n".to_string()),
+                die_id: Some(0),
+                cluster_id: Some(u32::MAX),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: Some("8-15,24-31\n".to_string()),
+                die_id: Some(1),
+                cluster_id: Some(u32::MAX),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: Some("8-15,24-31\n".to_string()),
+                die_id: Some(1),
+                cluster_id: Some(u32::MAX),
+            },
+        ];
+
+        let layout = layout_from_samples(&samples).expect("fixture layout should parse");
+        assert_eq!(layout.cpu_to_ccd, vec![0, 0, 1, 1]);
+        assert_eq!(layout.cpu_to_ccx, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn test_layout_from_die_id_fixtures() {
+        let samples = vec![
+            AmdCpuTopologySample {
+                die_cpus_list: None,
+                die_id: Some(0),
+                cluster_id: Some(3),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: None,
+                die_id: Some(0),
+                cluster_id: Some(3),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: None,
+                die_id: Some(2),
+                cluster_id: Some(7),
+            },
+            AmdCpuTopologySample {
+                die_cpus_list: None,
+                die_id: Some(2),
+                cluster_id: Some(7),
+            },
+        ];
+
+        let layout = layout_from_samples(&samples).expect("die-id layout should parse");
+        assert_eq!(layout.cpu_to_ccd, vec![0, 0, 1, 1]);
+        assert_eq!(layout.cpu_to_ccx, vec![3, 3, 7, 7]);
+    }
+
+    #[test]
+    fn test_sanitize_cluster_id_rejects_invalid_value() {
+        assert_eq!(sanitize_cluster_id(Some(u32::MAX)), None);
+        assert_eq!(sanitize_cluster_id(Some(5)), Some(5));
+        assert_eq!(sanitize_cluster_id(None), None);
     }
 
     #[test]

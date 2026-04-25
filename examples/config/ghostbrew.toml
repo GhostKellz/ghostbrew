@@ -31,6 +31,10 @@ prefcore_enabled = true
 # - "follow_ghost_vcache": React to ghost-vcache mode changes (default)
 vcache_switching = "follow_ghost_vcache"
 
+# Optional: force dev/build workflows toward the frequency CCD by default
+# when matching profiles set `work_mode = true`
+# prefer_vcache = false
+
 [intel]
 # Prefer P-cores for gaming/interactive tasks (12th-14th gen hybrid)
 prefer_pcores = true

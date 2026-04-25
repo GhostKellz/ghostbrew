@@ -5,6 +5,38 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-24
+
+### Added
+
+- `ghostbrew` front-end CLI with `run`, `support`, `benchmark`, and `completions` subcommands
+- Support bundle workflow with text and JSON output under `~/.local/state/ghostbrew/support/`
+- Benchmark workflow with text and JSON output under `~/.local/state/ghostbrew/benchmarks/`
+- Release/install scripts for hosted installs and reproducible Linux release bundles
+- Shell completion packaging for `ghostbrew` and `scx_ghostbrew` across bash, zsh, and fish
+- GitHub issue templates for bug reports, feature requests, and support intake
+- SECURITY.md with vulnerability reporting guidelines and security considerations
+
+### Fixed
+
+- Version string alignment across Cargo.toml, CLI, BPF, and packaging files
+- Clippy warnings for manual checked division patterns (use `checked_div()`)
+- Zen 5 X3D mode sync so ghost-vcache `frequency` mode enables GhostBrew `work_mode`
+- AMD CCD/CCX topology detection to prefer `die_cpus_list` / `die_id` and ignore invalid `cluster_id` values
+- Linux packaging/install drift across Arch, Fedora, Debian, man pages, completions, and release assets
+
+### Changed
+
+- Updated dependencies to latest compatible versions
+- Pinned scx_stats to 1.0.x for scx_utils 1.0.8 compatibility
+- Added regression coverage for topology helpers and Zen 5 X3D mode behavior
+- Expanded dev/build workload classification and profile tunables for 9950X3D frequency-CCD steering
+- Reorganized `docs/` into a cleaner foldered layout with `docs/README.md` as the root index
+- Moved checked-in benchmark example reports under `docs/benchmarks/`
+- Updated packaging files (PKGBUILD, spec, Debian packaging, installer, release bundle) for `v0.3.1`
+
+---
+
 ## [0.3.0] - 2026-03-31
 
 ### Added
@@ -52,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### DL Server Integration
 - Automatic detection of DL server support (kernel 7.0+)
 - Documentation of RT starvation protection benefits
-- New docs: `docs/DL_SERVER.md`
+- New docs: `docs/features/dl-server.md`
 
 #### NUMA-Aware Game Profiles
 - Per-profile NUMA node preference: `auto`, `gpu_local`, `node0`, `node1`, `spread`
@@ -118,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### AMD Ryzen 9950X3D (Zen5) Support
 - Full support for Zen5 X3D processors with 128MB V-Cache
 - Verified on linux-ghost-tkg 6.18 with znver5 optimizations
-- Baseline benchmarks documented in BENCHMARKS.md
+- Baseline benchmarks documented in `docs/benchmarks.md`
 - Prefcore ranking integration validated
 
 #### Intel Hybrid CPU Support
@@ -194,9 +226,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- BENCHMARKS.md with methodology and results framework
-- TROUBLESHOOTING.md for common issues
-- Expanded TUNING.md with profile examples
+- `docs/benchmarks.md` with methodology and results framework
+- `docs/guides/troubleshooting.md` for common issues
+- Expanded `docs/guides/tuning.md` with profile examples
 - Man page (scx_ghostbrew.1)
 
 ---

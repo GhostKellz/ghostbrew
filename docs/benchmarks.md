@@ -291,17 +291,25 @@ Scheduler Statistics (10s sample):
 - Max boost: 5998 MHz
 - Kernel: linux-ghost-tkg 6.18 (with znver5 optimizations)
 
-**Live Test Results (January 2026):**
+**Live Test Results (April 2026):**
 
 ```
 System: AMD Ryzen 9 9950X3D
-Mode: Gaming (--gaming flag)
-V-Cache: frequency mode (gaming testing via amd_x3d_mode sysfs)
-Background: System idle baseline
+Mode: ghost-vcache frequency mode + GhostBrew short dev-workload run
+Kernel: 7.0.1-1-cachyos-lto
+Workload: cargo check -q
 
-Baseline (EEVDF - no sched-ext):
-  sysbench 1-thread:  2466.70 events/sec
-  sysbench 16-thread: 37627.64 events/sec
+GhostBrew Stats Sample 1:
+  Enqueued:           44,598
+  Interactive tasks:  44,538
+  Prefcore placements:18,669
+  Freq CCD placements:12,045
+
+GhostBrew Stats Sample 2:
+  Enqueued:           98,829
+  Interactive tasks:  98,711
+  Prefcore placements:38,925
+  Freq CCD placements:28,795
 ```
 
 **Prefcore Rankings:**
@@ -325,6 +333,17 @@ CCD1 (Frequency):
 - V-Cache sysfs interface: AMDI0101:00
 - Prefcore rankings distributed evenly across CCDs
 - Best prefcore cores: CPU 8 (CCD0) and CPU 24 (CCD1)
+- On this host, `die_cpus_list` is a more trustworthy CCD signal than `cluster_id` because `cluster_id` reports `65535`
+- In `frequency` mode, GhostBrew now drives meaningful `Freq CCD placements` under real dev workloads (`cargo check -q`)
+
+**Safe Dev-Mode Workflow:**
+
+```bash
+# Builds GhostBrew if needed, runs a short scheduler session, then runs cargo check
+ghostbrew benchmark --workload "cargo check -q"
+```
+
+This workflow is intended for short explicit validation runs and does not require keeping GhostBrew active as the machine's long-lived default scheduler. The `ghostbrew benchmark` command writes runtime reports under `~/.local/state/ghostbrew/benchmarks/` by default, while checked-in example reports live under `docs/benchmarks/`.
 
 ### Intel Core i9-14900K
 
@@ -348,7 +367,7 @@ CCD1 (Frequency):
 # compare_schedulers.sh
 
 WORKLOAD="make -j$(nproc) vmlinux"
-RESULTS_DIR="./benchmark_results"
+RESULTS_DIR="./docs/benchmarks/examples"
 mkdir -p "$RESULTS_DIR"
 
 echo "=== Baseline (EEVDF) ==="

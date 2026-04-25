@@ -46,12 +46,15 @@ impl VCacheMode {
         }
     }
 
-    /// Convert to gaming_mode bool for BPF
-    pub fn to_gaming_mode(self) -> bool {
+    /// Convert ghost-vcache state into GhostBrew runtime modes.
+    ///
+    /// On dual-CCD Zen 5 X3D systems like the 9950X3D, `frequency` should not
+    /// only disable gaming preference, it should also enable the freq-CCD fast path.
+    pub fn to_scheduler_modes(self) -> (bool, bool) {
         match self {
-            VCacheMode::Cache => true,
-            VCacheMode::Frequency => false,
-            VCacheMode::Unknown => true, // Default to gaming
+            VCacheMode::Cache => (true, false),
+            VCacheMode::Frequency => (false, true),
+            VCacheMode::Unknown => (true, false),
         }
     }
 }
@@ -324,10 +327,10 @@ mod tests {
     }
 
     #[test]
-    fn test_vcache_mode_to_gaming() {
-        assert!(VCacheMode::Cache.to_gaming_mode());
-        assert!(!VCacheMode::Frequency.to_gaming_mode());
-        assert!(VCacheMode::Unknown.to_gaming_mode());
+    fn test_vcache_mode_to_scheduler_modes() {
+        assert_eq!(VCacheMode::Cache.to_scheduler_modes(), (true, false));
+        assert_eq!(VCacheMode::Frequency.to_scheduler_modes(), (false, true));
+        assert_eq!(VCacheMode::Unknown.to_scheduler_modes(), (true, false));
     }
 
     #[test]

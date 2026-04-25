@@ -1,9 +1,9 @@
 [package]
 name = "scx_ghostbrew"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["ghostkellz <ckelley@ghostkellz.sh>"]
-license = "GPL-2.0-only"
+license = "MIT"
 description = "GhostBrew - sched-ext BPF scheduler for AMD Zen4/Zen5 X3D (V-Cache) and Intel 12th-14th gen hybrid (P-core/E-core)"
 repository = "https://github.com/ghostkellz/ghostbrew"
 keywords = ["scheduler", "sched-ext", "bpf", "amd", "zen5", "x3d", "intel", "gaming", "cachyos"]
@@ -13,9 +13,15 @@ categories = ["os", "hardware-support"]
 name = "scx_ghostbrew"
 path = "src/main.rs"
 
+[[bin]]
+name = "ghostbrew"
+path = "src/bin/ghostbrew.rs"
+
 [dependencies]
 # sched-ext utilities (topology detection, BPF helpers, stats)
 scx_utils = "1.0"
+# Pin scx_stats to the 1.0.x line for scx_utils 1.0.8 compatibility
+scx_stats = "~1.0.20"
 
 # BPF loading and management
 libbpf-rs = "0.26"
@@ -39,11 +45,13 @@ nix = { version = "0.29", features = ["sched", "signal", "user"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+time = { version = "0.3", features = ["formatting", "local-offset"] }
 
 # Config/profiles path handling
 shellexpand = "3.1"
 glob = "0.3"
 dirs = "5.0"
+which = "6.0"
 
 # File watching for config hot-reload
 notify = "7.0"

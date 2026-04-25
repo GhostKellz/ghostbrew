@@ -1,0 +1,48 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export RUSTFLAGS = -C opt-level=3
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --bin ghostbrew --bin scx_ghostbrew --target x86_64-unknown-linux-gnu
+
+override_dh_auto_install:
+	install -Dm755 target/x86_64-unknown-linux-gnu/release/ghostbrew debian/scx-ghostbrew/usr/bin/ghostbrew
+	install -Dm755 target/x86_64-unknown-linux-gnu/release/scx_ghostbrew debian/scx-ghostbrew/usr/bin/scx_ghostbrew
+	install -Dm644 scx-ghostbrew.service debian/scx-ghostbrew/lib/systemd/system/scx-ghostbrew.service
+	install -Dm644 man/ghostbrew.1 debian/scx-ghostbrew/usr/share/man/man1/ghostbrew.1
+	install -Dm644 man/scx_ghostbrew.1 debian/scx-ghostbrew/usr/share/man/man1/scx_ghostbrew.1
+	install -Dm644 assets/icons/ghostbrew-icon.png debian/scx-ghostbrew/usr/share/icons/hicolor/256x256/apps/ghostbrew.png
+	install -dm755 debian/scx-ghostbrew/usr/share/bash-completion/completions
+	install -dm755 debian/scx-ghostbrew/usr/share/zsh/site-functions
+	install -dm755 debian/scx-ghostbrew/usr/share/fish/vendor_completions.d
+	target/x86_64-unknown-linux-gnu/release/ghostbrew completions bash > debian/scx-ghostbrew/usr/share/bash-completion/completions/ghostbrew
+	target/x86_64-unknown-linux-gnu/release/ghostbrew completions zsh > debian/scx-ghostbrew/usr/share/zsh/site-functions/_ghostbrew
+	target/x86_64-unknown-linux-gnu/release/ghostbrew completions fish > debian/scx-ghostbrew/usr/share/fish/vendor_completions.d/ghostbrew.fish
+	target/x86_64-unknown-linux-gnu/release/scx_ghostbrew --completions bash > debian/scx-ghostbrew/usr/share/bash-completion/completions/scx_ghostbrew
+	target/x86_64-unknown-linux-gnu/release/scx_ghostbrew --completions zsh > debian/scx-ghostbrew/usr/share/zsh/site-functions/_scx_ghostbrew
+	target/x86_64-unknown-linux-gnu/release/scx_ghostbrew --completions fish > debian/scx-ghostbrew/usr/share/fish/vendor_completions.d/scx_ghostbrew.fish
+	install -Dm644 README.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/README.md
+	install -Dm644 CHANGELOG.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/CHANGELOG.md
+	install -Dm644 CONTRIBUTING.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/CONTRIBUTING.md
+	install -Dm644 SECURITY.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/SECURITY.md
+	install -Dm644 docs/README.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/README.md
+	install -Dm644 docs/architecture/overview.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/architecture/overview.md
+	install -Dm644 docs/guides/tuning.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/guides/tuning.md
+	install -Dm644 docs/benchmarks.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/benchmarks.md
+	install -Dm644 docs/benchmarks/README.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/benchmarks/README.md
+	install -Dm644 docs/benchmarks/9950x3d-dev-report.txt debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/benchmarks/9950x3d-dev-report.txt
+	install -Dm644 docs/benchmarks/9950x3d-dev-report.json debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/benchmarks/9950x3d-dev-report.json
+	install -Dm644 docs/guides/troubleshooting.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/guides/troubleshooting.md
+	install -Dm644 docs/features/dl-server.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/features/dl-server.md
+	install -Dm644 docs/features/support-bundle.md debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/docs/features/support-bundle.md
+	install -Dm755 release/install-system.sh debian/scx-ghostbrew/usr/share/doc/scx-ghostbrew/release/install-system.sh
+
+override_dh_auto_test:
+	cargo test --release
+
+override_dh_auto_clean:
+	cargo clean || true
