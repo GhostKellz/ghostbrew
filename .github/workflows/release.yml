@@ -21,10 +21,16 @@ jobs:
 
       - name: Pin PKGBUILD source checksum
         # The tag that triggered this run is already live, so GitHub's source
-        # archive is downloadable. Replace the SKIP placeholder with a real
-        # sha256 so the PKGBUILD shipped in the release tarball verifies the
-        # source integrity instead of trusting it blindly.
-        run: updpkgsums release/arch/PKGBUILD
+        # archive is downloadable. Compute the sha256 of the exact tarball the
+        # PKGBUILD's source=() points at and replace the SKIP placeholder, so a
+        # makepkg build verifies the source instead of trusting it blindly.
+        # Dependency-free (no pacman-contrib) to work on any runner.
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          URL="https://github.com/${{ github.repository }}/archive/v${VERSION}.tar.gz"
+          SHA=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
+          sed -i "s/^sha256sums=('SKIP')/sha256sums=('${SHA}')/" release/arch/PKGBUILD
+          grep '^sha256sums=' release/arch/PKGBUILD
 
       - name: Build release binary
         run: cargo build --release

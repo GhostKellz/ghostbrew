@@ -28,10 +28,10 @@ optdepends=(
 provides=('scx_ghostbrew')
 conflicts=('scx_ghostbrew')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-# Placeholder: the real checksum is pinned at release time by the CI
-# `updpkgsums` step (see .github/workflows/release.yml) so a `makepkg` build
-# verifies the downloaded source tarball instead of trusting it blindly. To
-# pin manually, run `updpkgsums` in this directory.
+# Placeholder: the real checksum is pinned at release time by CI
+# (see .github/workflows/release.yml) so a `makepkg` build verifies the
+# downloaded source tarball instead of trusting it blindly. To pin manually,
+# run `updpkgsums` in this directory (needs pacman-contrib).
 sha256sums=('SKIP')
 
 # For git builds (development)
