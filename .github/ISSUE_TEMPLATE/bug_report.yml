@@ -56,7 +56,7 @@ body:
     id: version
     attributes:
       label: GhostBrew version
-      placeholder: scx_ghostbrew 0.3.1
+      placeholder: scx_ghostbrew 0.3.2
     validations:
       required: true
 

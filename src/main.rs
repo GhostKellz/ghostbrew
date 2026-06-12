@@ -41,7 +41,7 @@ const SCHEDULER_NAME: &str = "ghostbrew";
 #[derive(Parser, Debug)]
 #[command(name = "scx_ghostbrew")]
 #[command(author = "ghostkellz <ckelley@ghostkellz.sh>")]
-#[command(version = "0.3.1")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(
     about = "sched-ext BPF scheduler optimized for AMD Zen4/Zen5 X3D and Intel Hybrid processors"
 )]

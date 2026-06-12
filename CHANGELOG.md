@@ -5,6 +5,20 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-05-26
+
+### Changed
+
+- Upgraded scx_utils and scx_stats from 1.0.x to 1.1.x (fixes API incompatibility between scx_utils 1.0.8 and scx_stats 1.0.22)
+- Updated packaging for Arch, Fedora, and Debian
+- CLI version now derives from `Cargo.toml` (`CARGO_PKG_VERSION`) instead of a hardcoded string
+
+### Security
+
+- PKGBUILD source checksum is now pinned at release time via `updpkgsums` (CI) instead of `SKIP`, so `makepkg` verifies the downloaded source tarball
+
+---
+
 ## [0.3.1] - 2026-04-24
 
 ### Added

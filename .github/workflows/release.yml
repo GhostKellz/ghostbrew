@@ -19,6 +19,13 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Pin PKGBUILD source checksum
+        # The tag that triggered this run is already live, so GitHub's source
+        # archive is downloadable. Replace the SKIP placeholder with a real
+        # sha256 so the PKGBUILD shipped in the release tarball verifies the
+        # source integrity instead of trusting it blindly.
+        run: updpkgsums release/arch/PKGBUILD
+
       - name: Build release binary
         run: cargo build --release
 

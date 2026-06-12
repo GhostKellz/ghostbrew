@@ -1,3 +1,9 @@
+scx-ghostbrew (0.3.2-1) unstable; urgency=medium
+
+  * Upgraded scx_utils and scx_stats to 1.1.x
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Mon, 26 May 2026 12:00:00 -0500
+
 scx-ghostbrew (0.3.1-1) unstable; urgency=medium
 
   * Version alignment across Cargo.toml, CLI, BPF, and packaging

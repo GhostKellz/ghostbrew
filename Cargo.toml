@@ -1,6 +1,6 @@
 [package]
 name = "scx_ghostbrew"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 authors = ["ghostkellz <ckelley@ghostkellz.sh>"]
 license = "MIT"
@@ -19,9 +19,8 @@ path = "src/bin/ghostbrew.rs"
 
 [dependencies]
 # sched-ext utilities (topology detection, BPF helpers, stats)
-scx_utils = "1.0"
-# Pin scx_stats to the 1.0.x line for scx_utils 1.0.8 compatibility
-scx_stats = "~1.0.20"
+scx_utils = "1.1"
+scx_stats = "1.1"
 
 # BPF loading and management
 libbpf-rs = "0.26"
