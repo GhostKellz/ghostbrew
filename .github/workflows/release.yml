@@ -13,7 +13,7 @@ jobs:
     name: Build Release
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Get version
         id: version
@@ -94,13 +94,13 @@ jobs:
           makepkg -f --noextract --skipchecksums
 
       - name: Upload tarball artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-tarball
           path: scx-ghostbrew-*.tar.gz
 
       - name: Upload Arch package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arch-package
           path: arch-pkg/*.pkg.tar.zst
@@ -111,12 +111,12 @@ jobs:
     needs: build
     steps:
       - name: Download tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-tarball
 
       - name: Download Arch package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: arch-package
 
@@ -124,7 +124,7 @@ jobs:
         run: ls -la
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
