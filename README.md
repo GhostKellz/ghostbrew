@@ -334,7 +334,8 @@ Previously tested on AMD Ryzen 9 7950X3D (Zen4 X3D).
 | **linux-ghost** | Yes | Yes | Custom kernel with ghost-vcache integration |
 | linux-zen | Yes | — | 6.12+ required |
 | Mainline 6.12-6.19 | Yes | — | Full support |
-| **Mainline 7.0** | Yes | **Yes** | Full compat layer, DL server benefits |
+| **Mainline 7.0** | Yes | **Yes** | Full compat layer, DL server (RT starvation protection) |
+| **Mainline 7.1** | Yes | **Yes** | Inherits idle SMT-sibling preference in built-in CPU selection |
 
 **CachyOS Users:**
 ```bash

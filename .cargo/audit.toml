@@ -1,0 +1,11 @@
+# cargo-audit configuration
+# https://github.com/rustsec/rustsec/tree/main/cargo-audit
+
+[advisories]
+# Advisories that cannot be resolved from this crate are allowlisted here.
+ignore = [
+    # `paste` is unmaintained. It is pulled in transitively by scx_utils and
+    # cannot be removed until upstream drops it. No known vulnerability, only
+    # an unmaintained warning.
+    "RUSTSEC-2024-0436",
+]

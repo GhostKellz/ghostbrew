@@ -1,0 +1,33 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".cargo/audit.toml"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".cargo/audit.toml"
+  schedule:
+    # Weekly scan to catch newly published advisories against pinned deps.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure cargo-audit is installed
+        run: cargo audit --version || cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        run: cargo audit --deny warnings

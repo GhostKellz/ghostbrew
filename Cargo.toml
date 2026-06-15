@@ -1,6 +1,6 @@
 [package]
 name = "scx_ghostbrew"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 authors = ["ghostkellz <ckelley@ghostkellz.sh>"]
 license = "MIT"
@@ -51,9 +51,6 @@ shellexpand = "3.1"
 glob = "0.3"
 dirs = "5.0"
 which = "6.0"
-
-# File watching for config hot-reload
-notify = "7.0"
 
 # Concurrency
 crossbeam = "0.8"

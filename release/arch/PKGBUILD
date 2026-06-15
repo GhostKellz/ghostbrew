@@ -2,7 +2,7 @@
 # GhostBrew - sched-ext BPF scheduler for AMD Zen5/X3D and Intel Hybrid
 
 pkgname=scx-ghostbrew
-pkgver=0.3.2
+pkgver=0.3.3
 pkgrel=1
 pkgdesc="sched-ext BPF scheduler for AMD Zen5/X3D (V-Cache aware) and Intel 12th-14th gen hybrid (P-core/E-core)"
 arch=('x86_64')

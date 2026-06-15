@@ -5,6 +5,35 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-06-15
+
+### Added
+
+- Linux 7.1 listed as a supported/recommended kernel. GhostBrew uses the built-in
+  `scx_bpf_select_cpu_dfl()` path, so it inherits 7.1's idle SMT-sibling preference
+  in default CPU selection automatically (no scheduler changes required)
+- Dependabot configuration for `cargo` and `github-actions` ecosystems (weekly,
+  grouped minor/patch PRs)
+- `Security Audit` workflow running `cargo audit --deny warnings` on dependency
+  changes, on a weekly schedule, and on demand
+
+### Changed
+
+- Refreshed crate lockfile to latest in-semver versions (bitflags, cc, chrono, log,
+  regex, time, zerocopy, and related)
+
+### Removed
+
+- Dropped the unused `notify` dependency, which also removes the unmaintained
+  `instant` advisory (RUSTSEC-2024-0384) and 10 other transitive crates
+
+### Security
+
+- Added `.cargo/audit.toml` allowlisting the unmaintained transitive `paste`
+  advisory (RUSTSEC-2024-0436, pulled in via `scx_utils`) so audits stay green
+
+---
+
 ## [0.3.2] - 2026-05-26
 
 ### Changed
