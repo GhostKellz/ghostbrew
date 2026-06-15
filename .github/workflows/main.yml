@@ -12,27 +12,24 @@ jobs:
     name: Build on nv-palladium
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: clippy, rustfmt
+      # The self-hosted runner is pre-provisioned with the Rust toolchain
+      # (stable + nightly, including clippy and rustfmt). The previous
+      # archived actions-rs/toolchain step reinstalled it on every run and
+      # failed with an EXDEV cross-device rename inside the runner container,
+      # so we use the runner's existing toolchain directly.
+      - name: Toolchain info
+        run: rustc --version && cargo --version
 
       - name: Clippy Check
         run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: ./
 
       - name: Format Check
         run: cargo fmt --check
-        working-directory: ./
 
       - name: Build
         run: cargo build --verbose
-        working-directory: ./
 
       - name: Test
         run: cargo test --verbose
-        working-directory: ./
