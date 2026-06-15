@@ -12,7 +12,7 @@ jobs:
     name: Build & Test
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check formatting
         run: cargo fmt --check
@@ -28,7 +28,7 @@ jobs:
         run: cargo test --release
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scx_ghostbrew-linux-x86_64
           path: target/release/scx_ghostbrew
