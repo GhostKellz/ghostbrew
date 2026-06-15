@@ -5,6 +5,16 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Bumped major dependency versions: `nix` 0.29 -> 0.31, `toml` 0.8 -> 1.1,
+  `which` 6 -> 8, `dirs` 5 -> 6, and `criterion` (dev) 0.5 -> 0.8. Replaced the
+  deprecated `criterion::black_box` with `std::hint::black_box` in benchmarks
+
+---
+
 ## [0.3.3] - 2026-06-15
 
 ### Added
