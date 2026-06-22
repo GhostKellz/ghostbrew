@@ -12,7 +12,7 @@ jobs:
     name: Build & Test
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check formatting
         run: cargo fmt --check

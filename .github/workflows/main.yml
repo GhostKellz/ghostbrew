@@ -12,7 +12,7 @@ jobs:
     name: Build on nv-palladium
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # The self-hosted runner is pre-provisioned with the Rust toolchain
       # (stable + nightly, including clippy and rustfmt). The previous
