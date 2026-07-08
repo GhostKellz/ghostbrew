@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped major dependency versions: `nix` 0.29 -> 0.31, `toml` 0.8 -> 1.1,
   `which` 6 -> 8, `dirs` 5 -> 6, and `criterion` (dev) 0.5 -> 0.8. Replaced the
   deprecated `criterion::black_box` with `std::hint::black_box` in benchmarks
+- Refreshed the lockfile to current compatible crate releases, including
+  `scx_utils`/`scx_stats` 1.1.2 and the audit fixes for `memmap2`,
+  `crossbeam-epoch`, and `anyhow`.
+- Updated GitHub Actions checkout usage to `actions/checkout@v7` and made the
+  `Build` workflow fail on clippy warnings consistently with the main CI
+  workflow.
+
+### Security
+
+- Fixed `cargo audit --deny warnings` failures for RUSTSEC-2026-0186
+  (`memmap2`), RUSTSEC-2026-0204 (`crossbeam-epoch`), and RUSTSEC-2026-0190
+  (`anyhow`) via compatible lockfile updates.
 
 ---
 

@@ -12,14 +12,13 @@ jobs:
     name: Build & Test
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Clippy
         run: cargo clippy -- -D warnings
-        continue-on-error: true
 
       - name: Build release
         run: cargo build --release
