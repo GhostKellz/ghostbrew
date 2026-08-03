@@ -12,8 +12,10 @@ burst_threshold_ns = 2000000
 # Default: 3ms (3000000)
 slice_ns = 3000000
 
-# Enable gaming mode by default (prefer V-Cache/P-cores)
-gaming_mode = true
+# Force gaming mode (true) or work mode (false).
+# Leave commented out to let GhostBrew auto-detect from the workload.
+# --gaming/--work on the command line override this either way.
+# gaming_mode = true
 
 # Statistics display interval in seconds
 stats_interval = 2
@@ -30,10 +32,6 @@ prefcore_enabled = true
 # - "automatic": GhostBrew switches based on workload detection
 # - "follow_ghost_vcache": React to ghost-vcache mode changes (default)
 vcache_switching = "follow_ghost_vcache"
-
-# Optional: force dev/build workflows toward the frequency CCD by default
-# when matching profiles set `work_mode = true`
-# prefer_vcache = false
 
 [intel]
 # Prefer P-cores for gaming/interactive tasks (12th-14th gen hybrid)

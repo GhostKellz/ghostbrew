@@ -326,7 +326,6 @@ impl GpuMonitor {
     /// Tries multiple sources in order:
     /// 1. AMD sysfs (gpu_busy_percent)
     /// 2. NVIDIA nvidia-smi (fallback)
-    #[allow(dead_code)] // Scaffolding for future GPU coordination
     pub fn read_gpu_utilization(&self) -> Option<u32> {
         // Try AMD sysfs first (works for AMD GPUs)
         if let Ok(util) = Self::read_amd_gpu_util() {
@@ -357,23 +356,12 @@ impl GpuMonitor {
         anyhow::bail!("AMD GPU utilization not available")
     }
 
-    /// Read NVIDIA GPU utilization via hwmon or nvidia-smi
+    /// Read NVIDIA GPU utilization from /proc, falling back to nvidia-smi.
+    ///
+    /// /proc is tried first because this runs on the scheduler's periodic tick:
+    /// nvidia-smi costs a fork+exec and hundreds of milliseconds, which is far
+    /// too expensive to pay on every poll when a plain file read will do.
     fn read_nvidia_gpu_util(pci_address: &str) -> Result<u32> {
-        // Try nvidia-smi utility (most reliable for NVIDIA)
-        if let Ok(output) = std::process::Command::new("nvidia-smi")
-            .args([
-                "--query-gpu=utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ])
-            .output()
-            && output.status.success()
-            && let Ok(stdout) = String::from_utf8(output.stdout)
-            && let Ok(util) = stdout.lines().next().unwrap_or("0").trim().parse::<u32>()
-        {
-            return Ok(util.min(100));
-        }
-
-        // Fallback: try reading from /proc
         let utilization_path = format!("/proc/driver/nvidia/gpus/{}/utilization", pci_address);
         if let Ok(content) = fs::read_to_string(&utilization_path) {
             for line in content.lines() {
@@ -387,6 +375,19 @@ impl GpuMonitor {
             }
         }
 
+        if let Ok(output) = std::process::Command::new("nvidia-smi")
+            .args([
+                "--query-gpu=utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ])
+            .output()
+            && output.status.success()
+            && let Ok(stdout) = String::from_utf8(output.stdout)
+            && let Ok(util) = stdout.lines().next().unwrap_or("0").trim().parse::<u32>()
+        {
+            return Ok(util.min(100));
+        }
+
         anyhow::bail!("NVIDIA GPU utilization not available")
     }
 
@@ -396,7 +397,6 @@ impl GpuMonitor {
     /// - GpuBound if utilization >95%
     /// - CpuBound if utilization <50%
     /// - Balanced otherwise
-    #[allow(dead_code)] // Scaffolding for future GPU coordination
     pub fn detect_bottleneck(&self) -> GpuBottleneck {
         let Some(util) = self.read_gpu_utilization() else {
             return GpuBottleneck::Balanced;
@@ -438,7 +438,6 @@ pub const GPU_THREAD_PATTERNS: &[&str] = &[
 ];
 
 /// GPU bottleneck state for scheduler coordination
-#[allow(dead_code)] // Scaffolding for future GPU coordination integration
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum GpuBottleneck {
     /// GPU utilization >95%: reduce CPU work, let GPU catch up
@@ -450,7 +449,6 @@ pub enum GpuBottleneck {
     Balanced,
 }
 
-#[allow(dead_code)] // Scaffolding for future GPU coordination
 impl GpuBottleneck {
     /// Convert to BPF gpu_bound_mode value
     pub fn as_bpf_mode(self) -> u8 {

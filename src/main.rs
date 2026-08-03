@@ -37,6 +37,14 @@ use topology::CpuTopology;
 
 const SCHEDULER_NAME: &str = "ghostbrew";
 
+/// Size of BPF `struct runtime_tunables`, which must stay in sync with
+/// `src/bpf/ghostbrew.bpf.c`:
+/// u64 burst_threshold_ns, u64 slice_ns, then u8 gaming_mode, work_mode,
+/// power_save_mode, tickless_enabled, gpu_bound_mode, and 3 pad bytes.
+const RUNTIME_TUNABLES_SIZE: usize = 24;
+/// Byte offset of `gpu_bound_mode` within `struct runtime_tunables`.
+const TUNABLE_OFF_GPU_BOUND_MODE: usize = 20;
+
 /// GhostBrew - AMD Zen4/Zen5 X3D and Intel Hybrid optimized sched-ext scheduler
 #[derive(Parser, Debug)]
 #[command(name = "scx_ghostbrew")]
@@ -58,25 +66,26 @@ struct Args {
     #[arg(short = 'a', long, default_value_t = true)]
     auto_mode: bool,
 
-    /// Burst detection threshold in nanoseconds
-    #[arg(long, default_value_t = 2_000_000)]
-    burst_threshold: u64,
+    /// Burst detection threshold in nanoseconds [config: defaults.burst_threshold_ns, default: 2000000]
+    #[arg(long)]
+    burst_threshold: Option<u64>,
 
-    /// Time slice in nanoseconds
-    #[arg(long, default_value_t = 3_000_000)]
-    slice_ns: u64,
+    /// Time slice in nanoseconds [config: defaults.slice_ns, default: 3000000]
+    #[arg(long)]
+    slice_ns: Option<u64>,
 
     /// E-core offload mode for Intel hybrid CPUs: disabled, conservative, aggressive
-    #[arg(long, default_value = "conservative")]
-    ecore_offload: String,
+    /// [config: intel.ecore_offload, default: conservative]
+    #[arg(long)]
+    ecore_offload: Option<String>,
 
     /// Print scheduler statistics periodically
     #[arg(short, long)]
     stats: bool,
 
-    /// Statistics interval in seconds
-    #[arg(long, default_value_t = 2)]
-    stats_interval: u64,
+    /// Statistics interval in seconds [config: defaults.stats_interval, default: 2]
+    #[arg(long)]
+    stats_interval: Option<u64>,
 
     /// Benchmark mode - export stats to MangoHud-compatible CSV
     #[arg(short = 'b', long)]
@@ -122,12 +131,16 @@ struct Scheduler<'a> {
     gaming_detector: gaming::GamingDetector,
     prefcore: pbo::PrefcoreInfo,
     gpu_monitor: gpu::GpuMonitor,
+    /// Last GPU bottleneck state published to BPF, so we only write on change.
+    gpu_bottleneck: gpu::GpuBottleneck,
     epp_manager: pbo::EppManager,
     vm_monitor: vm::VmMonitor,
     container_monitor: container::ContainerMonitor,
     cgroup_monitor: cgroup::CgroupMonitor,
     // Config and profiles
     config: config::GhostBrewConfig,
+    /// CLI over config over built-in defaults, resolved once at init.
+    settings: config::ResolvedSettings,
     profile_manager: profiles::ProfileManager,
     vcache_controller: vcache::VCacheController,
     /// Active game profiles (PID -> profile name)
@@ -218,45 +231,47 @@ impl<'a> Scheduler<'a> {
             debug!("CCD/Cluster {}: CPUs {:?}", ccd, cpus_in_ccd);
         }
 
-        // Parse E-core offload mode for Intel
-        let ecore_offload_mode: u32 = match args.ecore_offload.to_lowercase().as_str() {
-            "disabled" | "off" | "0" => 0,
-            "conservative" | "1" => 1,
-            "aggressive" | "2" => 2,
-            _ => {
-                warn!(
-                    "Unknown ecore_offload mode '{}', using conservative",
-                    args.ecore_offload
-                );
-                1
-            }
-        };
+        // Load configuration before anything that consumes tunables, so CLI
+        // flags can be layered on top of it.
+        let config = config::GhostBrewConfig::load().unwrap_or_else(|e| {
+            warn!("Failed to load config: {}, using defaults", e);
+            config::GhostBrewConfig::default()
+        });
 
-        // Determine gaming mode and work mode
-        let (mut gaming_mode, mut work_mode) = if args.gaming {
+        let settings = config.resolve(&config::CliOverrides {
+            burst_threshold_ns: args.burst_threshold,
+            slice_ns: args.slice_ns,
+            stats_interval: args.stats_interval,
+            ecore_offload: args.ecore_offload.clone(),
+        });
+
+        // Determine gaming mode and work mode. `--gaming`/`--work` win outright;
+        // otherwise an explicit `defaults.gaming_mode` decides; otherwise we
+        // fall back to topology-based auto-detection.
+        let (mut gaming_mode, mut work_mode, mode_is_explicit) = if args.gaming {
             if topology.is_intel_hybrid {
                 info!("Mode: Gaming (P-cores preferred)");
             } else {
                 info!("Mode: Gaming (V-Cache CCD preferred)");
             }
-            (true, false)
+            (true, false, true)
         } else if args.work {
             if topology.is_intel_hybrid {
                 info!("Mode: Work (balanced E-core offload)");
             } else {
                 info!("Mode: Work (Frequency CCD preferred for higher boost)");
             }
-            (false, true)
+            (false, true, true)
+        } else if let Some(gaming) = settings.gaming_mode {
+            info!(
+                "Mode: {} (from config defaults.gaming_mode)",
+                if gaming { "Gaming" } else { "Work" }
+            );
+            (gaming, !gaming, true)
         } else {
             info!("Mode: Auto-detect");
-            (topology.is_x3d || topology.is_intel_hybrid, false)
+            (topology.is_x3d || topology.is_intel_hybrid, false, false)
         };
-
-        // Load configuration
-        let config = config::GhostBrewConfig::load().unwrap_or_else(|e| {
-            warn!("Failed to load config: {}, using defaults", e);
-            config::GhostBrewConfig::default()
-        });
 
         // Load game profiles
         let mut profile_manager = profiles::ProfileManager::new();
@@ -274,7 +289,7 @@ impl<'a> Scheduler<'a> {
         // Initialize V-Cache controller (ghost-vcache integration)
         let mut vcache_controller = vcache::VCacheController::default();
         if vcache_controller.is_available() {
-            if !args.gaming && !args.work && topology.asymmetric_ccd_boost {
+            if !mode_is_explicit && topology.asymmetric_ccd_boost {
                 let (vcache_gaming_mode, vcache_work_mode) =
                     vcache_controller.current_mode().to_scheduler_modes();
                 gaming_mode = vcache_gaming_mode;
@@ -391,15 +406,18 @@ impl<'a> Scheduler<'a> {
             rodata.is_intel_hybrid = topology.is_intel_hybrid;
             rodata.nr_pcores = topology.pcore_cpus.len() as u32;
             rodata.nr_ecores = topology.ecore_cpus.len() as u32;
-            rodata.ecore_offload_mode = ecore_offload_mode;
+            rodata.ecore_offload_mode = settings.ecore_offload.as_bpf_mode();
+            rodata.prefer_pcores = settings.prefer_pcores;
             // Zen 5 specific support
             rodata.zen_generation = topology.zen_generation.unwrap_or(0);
             rodata.freq_ccd = topology.freq_ccd.unwrap_or(0);
             rodata.asymmetric_ccd_boost = topology.asymmetric_ccd_boost;
             rodata.vcache_l3_mb = topology.vcache_l3_mb.unwrap_or(0);
+            rodata.prefer_vcache = settings.prefer_vcache;
+            rodata.prefcore_enabled = settings.prefcore_enabled;
             // Default tunables (will be overwritten by runtime_tunables map after load)
-            rodata.default_burst_threshold_ns = args.burst_threshold;
-            rodata.default_slice_ns = args.slice_ns;
+            rodata.default_burst_threshold_ns = settings.burst_threshold_ns;
+            rodata.default_slice_ns = settings.slice_ns;
         }
 
         // Load BPF program
@@ -418,7 +436,7 @@ impl<'a> Scheduler<'a> {
 
         // Initialize runtime tunables map
         debug!("Initializing runtime tunables...");
-        Self::init_runtime_tunables(&mut skel, &args, gaming_mode, work_mode)?;
+        Self::init_runtime_tunables(&mut skel, &settings, gaming_mode, work_mode)?;
 
         // Attach struct_ops scheduler
         debug!("Attaching scheduler...");
@@ -439,13 +457,8 @@ impl<'a> Scheduler<'a> {
                 topology.pcore_cpus.len(),
                 topology.ecore_cpus.len()
             );
-            let mode_str = match ecore_offload_mode {
-                0 => "disabled",
-                1 => "conservative",
-                2 => "aggressive",
-                _ => "unknown",
-            };
-            info!("  E-core offload: {}", mode_str);
+            info!("  E-core offload: {}", settings.ecore_offload.as_str());
+            info!("  P-core preference: {}", settings.prefer_pcores);
         } else {
             info!("  V-Cache CCD: {}", topology.vcache_ccd.unwrap_or(0));
             // Zen 5 specific info
@@ -461,10 +474,14 @@ impl<'a> Scheduler<'a> {
             }
         }
         if prefcore.enabled {
-            info!(
-                "  Prefcore: {} preferred CPUs",
-                prefcore.preferred_cpus.len()
-            );
+            if settings.prefcore_enabled {
+                info!(
+                    "  Prefcore: {} preferred CPUs",
+                    prefcore.preferred_cpus.len()
+                );
+            } else {
+                info!("  Prefcore: available but disabled by config amd.prefcore_enabled");
+            }
         }
 
         // Initialize MangoHud exporter if MangoHud is detected or benchmark mode
@@ -498,11 +515,13 @@ impl<'a> Scheduler<'a> {
             gaming_detector: gaming::GamingDetector::new(),
             prefcore,
             gpu_monitor,
+            gpu_bottleneck: gpu::GpuBottleneck::default(),
             epp_manager,
             vm_monitor,
             container_monitor,
             cgroup_monitor,
             config,
+            settings,
             profile_manager,
             vcache_controller,
             active_profiles: std::collections::HashMap::new(),
@@ -596,15 +615,13 @@ impl<'a> Scheduler<'a> {
     /// Initialize runtime tunables in BPF map
     fn init_runtime_tunables(
         skel: &mut GhostbrewSkel,
-        args: &Args,
+        settings: &config::ResolvedSettings,
         gaming_mode: bool,
         work_mode: bool,
     ) -> Result<()> {
-        // Struct layout must match BPF runtime_tunables:
-        // u64 burst_threshold_ns, u64 slice_ns, u8 gaming_mode, u8 work_mode, u8[6] pad
-        let mut value = [0u8; 24];
-        value[0..8].copy_from_slice(&args.burst_threshold.to_ne_bytes());
-        value[8..16].copy_from_slice(&args.slice_ns.to_ne_bytes());
+        let mut value = [0u8; RUNTIME_TUNABLES_SIZE];
+        value[0..8].copy_from_slice(&settings.burst_threshold_ns.to_ne_bytes());
+        value[8..16].copy_from_slice(&settings.slice_ns.to_ne_bytes());
         value[16] = if gaming_mode { 1 } else { 0 };
         value[17] = if work_mode { 1 } else { 0 };
         // Padding bytes 18-23 are already 0
@@ -617,7 +634,7 @@ impl<'a> Scheduler<'a> {
 
         debug!(
             "Runtime tunables: burst={}ns, slice={}ns, gaming={}, work={}",
-            args.burst_threshold, args.slice_ns, gaming_mode, work_mode
+            settings.burst_threshold_ns, settings.slice_ns, gaming_mode, work_mode
         );
         Ok(())
     }
@@ -659,8 +676,11 @@ impl<'a> Scheduler<'a> {
             work = v;
         }
 
-        // Write back
-        let mut value = [0u8; 24];
+        // Start from the current record so the fields this function does not
+        // own (power_save_mode, tickless_enabled, gpu_bound_mode) survive.
+        let mut value = [0u8; RUNTIME_TUNABLES_SIZE];
+        let copy_len = current.len().min(RUNTIME_TUNABLES_SIZE);
+        value[..copy_len].copy_from_slice(&current[..copy_len]);
         value[0..8].copy_from_slice(&burst.to_ne_bytes());
         value[8..16].copy_from_slice(&slice.to_ne_bytes());
         value[16] = if gaming { 1 } else { 0 };
@@ -677,6 +697,57 @@ impl<'a> Scheduler<'a> {
             burst, slice, gaming, work
         );
         Ok(())
+    }
+
+    /// Sample the GPU bottleneck and publish it to BPF as `gpu_bound_mode`.
+    ///
+    /// BPF folds this into `get_slice_ns()`: GPU-bound widens the slice (the
+    /// render threads are waiting on the GPU anyway), CPU-bound narrows it.
+    fn update_gpu_bound_mode(&mut self) {
+        if self.gpu_monitor.gpu_count() == 0 {
+            return;
+        }
+
+        let bottleneck = self.gpu_monitor.detect_bottleneck();
+        if bottleneck == self.gpu_bottleneck {
+            return;
+        }
+
+        let key = 0u32.to_ne_bytes();
+        let current = match self
+            .skel
+            .maps
+            .runtime_tunables
+            .lookup(&key, libbpf_rs::MapFlags::ANY)
+        {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                warn!("runtime_tunables map empty, cannot publish GPU bottleneck");
+                return;
+            }
+            Err(e) => {
+                warn!("Failed to read runtime_tunables: {}", e);
+                return;
+            }
+        };
+
+        let mut value = [0u8; RUNTIME_TUNABLES_SIZE];
+        let copy_len = current.len().min(RUNTIME_TUNABLES_SIZE);
+        value[..copy_len].copy_from_slice(&current[..copy_len]);
+        value[TUNABLE_OFF_GPU_BOUND_MODE] = bottleneck.as_bpf_mode();
+
+        if let Err(e) =
+            self.skel
+                .maps
+                .runtime_tunables
+                .update(&key, &value, libbpf_rs::MapFlags::ANY)
+        {
+            warn!("Failed to publish GPU bottleneck to BPF: {}", e);
+            return;
+        }
+
+        info!("GPU bottleneck: {} -> {}", self.gpu_bottleneck, bottleneck);
+        self.gpu_bottleneck = bottleneck;
     }
 
     /// Apply profile-specific tunables to BPF
@@ -721,8 +792,8 @@ impl<'a> Scheduler<'a> {
         info!("Reverting to default tunables (no active profiles)");
 
         if let Err(e) = self.update_runtime_tunables(
-            Some(self.args.burst_threshold),
-            Some(self.args.slice_ns),
+            Some(self.settings.burst_threshold_ns),
+            Some(self.settings.slice_ns),
             None, // Keep current gaming_mode
             None, // Keep current work_mode
         ) {
@@ -732,8 +803,8 @@ impl<'a> Scheduler<'a> {
 
     fn run(&mut self, shutdown: Arc<AtomicBool>) -> Result<()> {
         info!("GhostBrew v{} running...", env!("CARGO_PKG_VERSION"));
-        info!("Burst threshold: {} ns", self.args.burst_threshold);
-        info!("Time slice: {} ns", self.args.slice_ns);
+        info!("Burst threshold: {} ns", self.settings.burst_threshold_ns);
+        info!("Time slice: {} ns", self.settings.slice_ns);
         info!(
             "SMT: {}",
             if self.topology.smt_enabled {
@@ -752,7 +823,7 @@ impl<'a> Scheduler<'a> {
         self.update_cgroup_classes();
 
         // Main loop
-        let stats_interval = Duration::from_secs(self.args.stats_interval);
+        let stats_interval = Duration::from_secs(self.settings.stats_interval);
         let poll_interval = Duration::from_millis(100);
         let mut last_stats = Instant::now();
 
@@ -781,6 +852,9 @@ impl<'a> Scheduler<'a> {
             if self.gpu_monitor.update_power_states() {
                 debug!("GPU power state changed");
             }
+
+            // Publish the GPU bottleneck hint so BPF can size time slices
+            self.update_gpu_bound_mode();
 
             // Scan for VMs and update BPF map
             self.update_vm_pids();

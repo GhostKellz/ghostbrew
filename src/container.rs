@@ -371,6 +371,9 @@ pub struct ContainerMonitor {
 }
 
 impl ContainerMonitor {
+    // Only reached via `Default`, which is unreachable from the bin's test
+    // harness — `--all-targets` would otherwise flag this as dead.
+    #[allow(dead_code)]
     pub fn new() -> Result<Self> {
         let nvidia_available = nvidia_runtime_available();
         if nvidia_available {

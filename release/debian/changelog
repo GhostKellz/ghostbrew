@@ -1,3 +1,12 @@
+scx-ghostbrew (0.3.4-1) unstable; urgency=medium
+
+  * Bumped nix, toml, which, dirs, and criterion to new major versions
+  * Refreshed crate lockfile, including scx_utils/scx_stats 1.1.2
+  * Fixed RUSTSEC-2026-0186, RUSTSEC-2026-0204, and RUSTSEC-2026-0190
+  * Updated GitHub Actions to actions/checkout@v7
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Mon, 03 Aug 2026 12:00:00 -0500
+
 scx-ghostbrew (0.3.3-1) unstable; urgency=medium
 
   * Listed Linux 7.1 as supported (inherits idle SMT-sibling preference)

@@ -5,10 +5,40 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.4] - 2026-08-03
+
+### Added
+
+- GPU bottleneck feedback into scheduling. Userspace samples the GPU on each
+  stats tick and publishes a `gpu_bound_mode` hint into the `runtime_tunables`
+  map; BPF folds it into `get_slice_ns()`, widening the time slice when the GPU
+  is the bottleneck and narrowing it when the CPU is, with clamps at 0.5ms and
+  20ms. Previously the BPF-side helper existed but was never called
+
+### Fixed
+
+- The entire `[defaults]` config section (`burst_threshold_ns`, `slice_ns`,
+  `gaming_mode`, `stats_interval`) plus `intel.ecore_offload`,
+  `intel.prefer_pcores`, `amd.prefer_vcache`, and `amd.prefcore_enabled` were
+  parsed but never applied — the config file was loaded after the values had
+  already been consumed. Configuration now resolves as CLI over config file over
+  built-in defaults, and the AMD/Intel steering flags gate the corresponding BPF
+  paths
+- `defaults.gaming_mode` now selects gaming or work mode. Leaving it unset keeps
+  the previous auto-detection behavior; `--gaming`/`--work` still win outright
+- Profile switches no longer clobber `power_save_mode`, `tickless_enabled`, and
+  `gpu_bound_mode`. `update_runtime_tunables()` wrote a freshly zeroed record
+  instead of read-modify-writing the fields it owns
+- GPU utilization is read from `/proc/driver/nvidia/gpus/*/utilization` before
+  falling back to `nvidia-smi`, avoiding a fork+exec on every scheduler tick
 
 ### Changed
 
+- `--burst-threshold`, `--slice-ns`, `--ecore-offload`, and `--stats-interval`
+  no longer carry clap defaults, so an absent flag is distinguishable from an
+  explicitly passed one. Help text now names the config key each flag overrides
+- The shipped `examples/config/ghostbrew.toml` no longer forces
+  `gaming_mode = true`; it is commented out so the default example auto-detects
 - Bumped major dependency versions: `nix` 0.29 -> 0.31, `toml` 0.8 -> 1.1,
   `which` 6 -> 8, `dirs` 5 -> 6, and `criterion` (dev) 0.5 -> 0.8. Replaced the
   deprecated `criterion::black_box` with `std::hint::black_box` in benchmarks

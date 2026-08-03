@@ -1,7 +1,7 @@
 %global crate scx_ghostbrew
 
 Name:           ghostbrew
-Version:        0.3.3
+Version:        0.3.4
 Release:        1%{?dist}
 Summary:        sched-ext BPF scheduler optimized for AMD Zen5/X3D processors
 
@@ -108,6 +108,12 @@ install -Dpm 644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %{_datadir}/fish/vendor_completions.d/scx_ghostbrew.fish
 
 %changelog
+* Mon Aug 03 2026 ghostkellz <ckelley@ghostkellz.sh> - 0.3.4-1
+- Bumped nix, toml, which, dirs, and criterion to new major versions
+- Refreshed crate lockfile, including scx_utils/scx_stats 1.1.2
+- Fixed RUSTSEC-2026-0186, RUSTSEC-2026-0204, and RUSTSEC-2026-0190
+- Updated GitHub Actions to actions/checkout@v7
+
 * Sun Jun 15 2026 ghostkellz <ckelley@ghostkellz.sh> - 0.3.3-1
 - Listed Linux 7.1 as supported (inherits idle SMT-sibling preference)
 - Removed unused notify dependency and refreshed crate lockfile

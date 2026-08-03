@@ -29,12 +29,21 @@ char _license[] SEC("license") = "GPL";
 /*
  * Constants
  */
-#define GHOSTBREW_VERSION	"0.3.2"
+#define GHOSTBREW_VERSION	"0.3.4"
 #define MAX_CPUS		256
 #define MAX_CCDS		8
 #define NSEC_PER_MSEC		1000000ULL
 #define NSEC_PER_SEC		1000000000ULL
 #define RINGBUF_SIZE		(256 * 1024)  /* 256KB ringbuf */
+
+/* Slice clamps applied after GPU-bottleneck modulation */
+#define SLICE_MIN_NS		(500 * 1000ULL)		/* 0.5ms */
+#define SLICE_MAX_NS		(20 * 1000000ULL)	/* 20ms */
+
+/* runtime_tunables.gpu_bound_mode values (mirrored in src/gpu.rs) */
+#define GPU_MODE_BALANCED	0
+#define GPU_MODE_GPU_BOUND	1
+#define GPU_MODE_CPU_BOUND	2
 
 /* DSQ IDs: 0 = fallback shared, 1-8 = per-CCD */
 #define FALLBACK_DSQ		0
@@ -115,12 +124,15 @@ const volatile bool is_intel_hybrid = false;
 const volatile u32 nr_pcores = 0;
 const volatile u32 nr_ecores = 0;
 const volatile u32 ecore_offload_mode = 1;  /* 0=disabled, 1=conservative, 2=aggressive */
+const volatile bool prefer_pcores = true;   /* Steer gaming/interactive tasks to P-cores */
 
 /* Zen 5 specific support */
 const volatile u32 zen_generation = 0;      /* 4 = Zen 4, 5 = Zen 5, 0 = not AMD */
 const volatile u32 freq_ccd = 0;            /* Non-V-Cache CCD for freq-bound tasks */
 const volatile bool asymmetric_ccd_boost = false;  /* Zen 5 X3D: CCDs have different boost */
 const volatile u32 vcache_l3_mb = 0;        /* V-Cache L3 size in MB (64/96) */
+const volatile bool prefer_vcache = true;   /* Steer gaming tasks to the V-Cache CCD */
+const volatile bool prefcore_enabled = true; /* Honor AMD prefcore rankings when picking cores */
 /* Note: work_mode is now in runtime_tunables map for live updates */
 
 /*
@@ -469,11 +481,34 @@ static inline u64 get_burst_threshold(void)
 	return rt ? rt->burst_threshold_ns : default_burst_threshold_ns;
 }
 
+/*
+ * Time slice, modulated by the GPU bottleneck hint userspace publishes in
+ * runtime_tunables.gpu_bound_mode.
+ *
+ * When the GPU is the bottleneck the render threads mostly wait on it, so a
+ * longer slice trims context-switch overhead at no latency cost. When the CPU
+ * is the bottleneck the reverse holds: a shorter slice keeps the simulation and
+ * render threads interleaving tightly. Clamped so a bad hint or an extreme
+ * profile slice cannot push the scheduler into pathological territory.
+ */
 static inline u64 get_slice_ns(void)
 {
 	u32 key = 0;
 	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
-	return rt ? rt->slice_ns : default_slice_ns;
+	u64 slice = rt ? rt->slice_ns : default_slice_ns;
+	u8 gpu_mode = rt ? rt->gpu_bound_mode : GPU_MODE_BALANCED;
+
+	if (gpu_mode == GPU_MODE_GPU_BOUND)
+		slice *= 2;
+	else if (gpu_mode == GPU_MODE_CPU_BOUND)
+		slice /= 2;
+
+	if (slice < SLICE_MIN_NS)
+		slice = SLICE_MIN_NS;
+	else if (slice > SLICE_MAX_NS)
+		slice = SLICE_MAX_NS;
+
+	return slice;
 }
 
 static inline bool get_gaming_mode(void)
@@ -509,17 +544,6 @@ static inline bool get_tickless_enabled(void)
 	u32 key = 0;
 	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
 	return rt ? rt->tickless_enabled : false;
-}
-
-/*
- * v0.3.0: GPU bound mode helper
- * Returns: 0=balanced, 1=gpu_bound, 2=cpu_bound
- */
-static inline u8 get_gpu_bound_mode(void)
-{
-	u32 key = 0;
-	struct runtime_tunables *rt = bpf_map_lookup_elem(&runtime_tunables, &key);
-	return rt ? rt->gpu_bound_mode : 0;
 }
 
 /*
@@ -896,7 +920,16 @@ found_gaming:
 static u32 get_prefcore_ranking(s32 cpu)
 {
 	u32 key = cpu;
-	u32 *ranking = bpf_map_lookup_elem(&prefcore_rankings, &key);
+	u32 *ranking;
+
+	/*
+	 * Single chokepoint for prefcore preference: returning 0 for every CPU
+	 * makes the idle-CPU scans fall back to first-found ordering.
+	 */
+	if (!prefcore_enabled)
+		return 0;
+
+	ranking = bpf_map_lookup_elem(&prefcore_rankings, &key);
 	return ranking ? *ranking : 0;
 }
 
@@ -1377,7 +1410,7 @@ s32 BPF_STRUCT_OPS(ghostbrew_select_cpu, struct task_struct *p,
 	 */
 	if (is_intel_hybrid) {
 		/* Gaming/interactive -> prefer P-cores */
-		if (tctx->wants_vcache) {
+		if (tctx->wants_vcache && prefer_pcores) {
 			cpu = pick_idle_pcore(p, true);  /* SMT-idle P-core */
 			if (cpu >= 0)
 				goto dispatch;
@@ -1434,7 +1467,7 @@ s32 BPF_STRUCT_OPS(ghostbrew_select_cpu, struct task_struct *p,
 	/*
 	 * Gaming/interactive tasks: prefer V-Cache CCD with SMT-idle cores
 	 */
-	if (tctx->wants_vcache && !wmode) {
+	if (tctx->wants_vcache && !wmode && prefer_vcache) {
 		/* First try: SMT-idle core in V-Cache CCD */
 		cpu = pick_idle_cpu_in_ccd(p, vcache_ccd, true);
 		if (cpu >= 0) {
@@ -1469,7 +1502,8 @@ s32 BPF_STRUCT_OPS(ghostbrew_select_cpu, struct task_struct *p,
 	 * Core compaction: when gaming tasks are on V-Cache CCD,
 	 * steer batch tasks to other CCDs to avoid contention.
 	 */
-	if (!tctx->wants_vcache && vcache_has_gaming && prev_cctx->ccd == vcache_ccd) {
+	if (prefer_vcache && !tctx->wants_vcache && vcache_has_gaming &&
+	    prev_cctx->ccd == vcache_ccd) {
 		/* Try non-V-Cache CCDs first */
 		for (u32 i = 0; i < nr_ccds && i < MAX_CCDS; i++) {
 			if (i == vcache_ccd)
@@ -1593,7 +1627,7 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 	cctx = get_cpu_ctx(cpu);
 	if (cctx) {
 		/* Use CCD-specific DSQ */
-		if (tctx && tctx->wants_vcache) {
+		if (tctx && tctx->wants_vcache && prefer_vcache) {
 			dsq_id = ccd_to_dsq(vcache_ccd);
 		} else {
 			dsq_id = ccd_to_dsq(cctx->ccd);
@@ -1679,14 +1713,14 @@ void BPF_STRUCT_OPS(ghostbrew_dispatch, s32 cpu, struct task_struct *prev)
 	cctx = get_cpu_ctx(cpu);
 	if (!cctx) {
 		/* Fallback if no CPU context */
-		scx_bpf_dsq_move_to_local(FALLBACK_DSQ);
+		scx_bpf_dsq_move_to_local(FALLBACK_DSQ, 0);
 		__sync_fetch_and_add(&nr_dispatched, 1);
 		return;
 	}
 
 	/* First try local CCD's DSQ */
 	local_dsq = ccd_to_dsq(cctx->ccd);
-	if (scx_bpf_dsq_move_to_local(local_dsq)) {
+	if (scx_bpf_dsq_move_to_local(local_dsq, 0)) {
 		__sync_fetch_and_add(&nr_dispatched, 1);
 		return;
 	}
@@ -1694,7 +1728,7 @@ void BPF_STRUCT_OPS(ghostbrew_dispatch, s32 cpu, struct task_struct *prev)
 	/* For V-Cache CPUs, also check V-Cache DSQ specifically */
 	if (cctx->is_vcache) {
 		u64 vcache_dsq = ccd_to_dsq(vcache_ccd);
-		if (vcache_dsq != local_dsq && scx_bpf_dsq_move_to_local(vcache_dsq)) {
+		if (vcache_dsq != local_dsq && scx_bpf_dsq_move_to_local(vcache_dsq, 0)) {
 			__sync_fetch_and_add(&nr_dispatched, 1);
 			return;
 		}
@@ -1705,14 +1739,14 @@ void BPF_STRUCT_OPS(ghostbrew_dispatch, s32 cpu, struct task_struct *prev)
 		u64 dsq_id = ccd_to_dsq(i);
 		if (dsq_id == local_dsq)
 			continue;
-		if (scx_bpf_dsq_move_to_local(dsq_id)) {
+		if (scx_bpf_dsq_move_to_local(dsq_id, 0)) {
 			__sync_fetch_and_add(&nr_dispatched, 1);
 			return;
 		}
 	}
 
 	/* Finally try fallback DSQ */
-	if (scx_bpf_dsq_move_to_local(FALLBACK_DSQ)) {
+	if (scx_bpf_dsq_move_to_local(FALLBACK_DSQ, 0)) {
 		__sync_fetch_and_add(&nr_dispatched, 1);
 	}
 
