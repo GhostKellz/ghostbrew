@@ -60,7 +60,7 @@ ctrlc = { version = "3.4", features = ["termination"] }
 
 [build-dependencies]
 # BPF compilation
-libbpf-cargo = "0.26"
+libbpf-cargo = "0.27"
 
 [profile.release]
 lto = "fat"
