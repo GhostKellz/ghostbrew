@@ -1,7 +1,7 @@
 %global crate scx_ghostbrew
 
 Name:           ghostbrew
-Version:        0.3.4
+Version:        0.3.5
 Release:        1%{?dist}
 Summary:        sched-ext BPF scheduler optimized for AMD Zen5/X3D processors
 
@@ -108,6 +108,11 @@ install -Dpm 644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %{_datadir}/fish/vendor_completions.d/scx_ghostbrew.fish
 
 %changelog
+* Mon Aug 31 2026 ghostkellz <ckelley@ghostkellz.sh> - 0.3.5-1
+- Refreshed vendored sched_ext headers for Linux 7.3 compatibility
+- Added load-only BPF verification and scheduler ejection recovery
+- Improved X3D topology detection and virtual-time fairness
+
 * Mon Aug 03 2026 ghostkellz <ckelley@ghostkellz.sh> - 0.3.4-1
 - Bumped nix, toml, which, dirs, and criterion to new major versions
 - Refreshed crate lockfile, including scx_utils/scx_stats 1.1.2

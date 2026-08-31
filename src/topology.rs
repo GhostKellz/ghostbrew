@@ -56,24 +56,47 @@ pub struct CpuTopology {
     pub asymmetric_ccd_boost: bool,
 }
 
-/// Known X3D processor models
+/// Known X3D processor models. Only a hint: sysfs L3 sizes are authoritative
+/// and let us recognise parts that shipped after this list was written.
 const X3D_MODELS: &[&str] = &[
     "7800X3D", "7900X3D", "7950X3D", "9800X3D", "9900X3D", "9950X3D",
 ];
+
+/// Largest per-CCD L3 (KB) on a Zen die without stacked cache. Anything above
+/// this can only be V-Cache.
+const MAX_BASE_CCD_L3_KB: u32 = 32 * 1024;
 
 /// Detect CPU topology
 pub fn detect_topology() -> Result<CpuTopology> {
     let nr_cpus = detect_nr_cpus()?;
     let model_name = detect_model_name()?;
-    let is_x3d = is_x3d_processor(&model_name);
     let cpu_family = detect_cpu_family();
 
     debug!("Detected CPU: {}", model_name);
-    debug!("Is X3D: {}, CPU family: {}", is_x3d, cpu_family);
 
     // Detect Intel hybrid architecture
     let intel_info = intel::detect_intel_hybrid(nr_cpus, &model_name)?;
     let is_intel_hybrid = intel_info.is_hybrid;
+
+    // Detect CCD/CCX mapping from sysfs topology
+    // For Intel hybrid, we use cluster_id to group P-cores and E-cores
+    let (cpu_to_ccd, cpu_to_ccx, cpu_to_node) = if is_intel_hybrid {
+        detect_intel_topology(nr_cpus, &intel_info)?
+    } else {
+        detect_cpu_topology(nr_cpus)?
+    };
+
+    // Count unique CCDs (or clusters for Intel)
+    let nr_ccds = cpu_to_ccd.iter().max().map(|&m| m + 1).unwrap_or(1);
+
+    // Per-CCD L3 sizes drive V-Cache detection: stacked cache triples a CCD's
+    // L3 (32MB -> 96MB), so sysfs answers both "is this X3D" and "which CCD"
+    // without trusting a model allowlist that rots with every new SKU.
+    let ccd_l3_kb = detect_ccd_l3_sizes(nr_cpus, &cpu_to_ccd);
+    let vcache = detect_vcache_for_model(&model_name, &ccd_l3_kb);
+
+    let is_x3d = vcache.is_some() || is_x3d_processor(&model_name);
+    debug!("Is X3D: {}, CPU family: {}", is_x3d, cpu_family);
 
     // Determine Zen generation from CPU family
     // Family 25 = Zen 3/4, Family 26 = Zen 5
@@ -111,22 +134,12 @@ pub fn detect_topology() -> Result<CpuTopology> {
         CpuArch::Generic
     };
 
-    // Detect CCD/CCX mapping from sysfs topology
-    // For Intel hybrid, we use cluster_id to group P-cores and E-cores
-    let (cpu_to_ccd, cpu_to_ccx, cpu_to_node) = if is_intel_hybrid {
-        detect_intel_topology(nr_cpus, &intel_info)?
-    } else {
-        detect_cpu_topology(nr_cpus)?
-    };
-
-    // Count unique CCDs (or clusters for Intel)
-    let nr_ccds = cpu_to_ccd.iter().max().map(|&m| m + 1).unwrap_or(1);
-
-    // Determine V-Cache CCD for X3D processors
-    let vcache_ccd = if is_x3d {
-        detect_vcache_ccd(&model_name, nr_ccds)
-    } else {
-        None
+    // Prefer the sysfs-derived CCD; fall back to the model table when the
+    // per-CCD L3 sizes are unavailable or indistinguishable.
+    let vcache_ccd = match vcache {
+        Some((ccd, _)) => Some(ccd),
+        None if is_x3d => detect_vcache_ccd(&model_name, nr_ccds),
+        None => None,
     };
 
     // Detect SMT siblings
@@ -139,17 +152,27 @@ pub fn detect_topology() -> Result<CpuTopology> {
     let asymmetric_ccd_boost = is_zen5_x3d && nr_ccds >= 2;
 
     // Determine frequency CCD (non-V-Cache CCD for Zen 5 X3D)
-    let freq_ccd = if asymmetric_ccd_boost && let Some(vc) = vcache_ccd {
-        // Use the other CCD for frequency-bound tasks
-        Some(if vc == 0 { 1 } else { 0 })
-    } else {
+    let freq_ccd = if !asymmetric_ccd_boost {
         None
+    } else if vcache.is_some() {
+        // sysfs gave us real per-CCD L3, so name a die that actually has no
+        // stacked cache rather than assuming "the other one".
+        detect_freq_ccd(&ccd_l3_kb)
+    } else {
+        // Cache sysfs was unusable and vcache_ccd came from the model table,
+        // which only describes two-CCD desktop parts. Don't guess beyond that.
+        vcache_ccd
+            .filter(|_| nr_ccds == 2)
+            .map(|vc| if vc == 0 { 1 } else { 0 })
     };
 
-    // V-Cache L3 size per CCD: All X3D V-Cache CCDs have 96MB (32MB base + 64MB stacked)
-    // - Single-CCD (7800X3D, 9800X3D): 96MB total
-    // - Multi-CCD (7900X3D, 7950X3D, 9900X3D, 9950X3D): 96MB on V-Cache CCD, 32MB on regular CCD
-    let vcache_l3_mb = if is_x3d { Some(96) } else { None };
+    // V-Cache L3 size per CCD, read from sysfs. 96MB (32MB base + 64MB stacked)
+    // on every X3D part to date, but reading it keeps us honest if that changes.
+    let vcache_l3_mb = match vcache {
+        Some((_, mb)) => Some(mb),
+        None if is_x3d => Some(96),
+        None => None,
+    };
 
     if asymmetric_ccd_boost {
         debug!(
@@ -239,7 +262,84 @@ fn is_x3d_processor(model_name: &str) -> bool {
     X3D_MODELS.iter().any(|&model| model_name.contains(model))
 }
 
-/// Detect which CCD has V-Cache
+/// Read a CPU's L3 cache size in KB from sysfs.
+///
+/// The `indexN` numbering is not fixed across vendors, so match on `level`
+/// rather than assuming L3 is always `index3`.
+fn read_cpu_l3_kb(cpu: u32) -> Option<u32> {
+    let dir = format!("/sys/devices/system/cpu/cpu{}/cache", cpu);
+    for index in 0..8 {
+        let base = format!("{}/index{}", dir, index);
+        if !Path::new(&base).exists() {
+            continue;
+        }
+        if read_topology_file(&format!("{}/level", base)).ok() != Some(3) {
+            continue;
+        }
+        let Ok(size) = fs::read_to_string(format!("{}/size", base)) else {
+            continue;
+        };
+        return size.trim().trim_end_matches('K').parse().ok();
+    }
+    None
+}
+
+/// Map each CCD to the L3 size (KB) reported by its CPUs.
+fn detect_ccd_l3_sizes(nr_cpus: u32, cpu_to_ccd: &[u32]) -> BTreeMap<u32, u32> {
+    let mut sizes = BTreeMap::new();
+    for cpu in 0..nr_cpus {
+        let (Some(&ccd), Some(kb)) = (cpu_to_ccd.get(cpu as usize), read_cpu_l3_kb(cpu)) else {
+            continue;
+        };
+        // Take the max in case a CCD reports mixed values.
+        let entry = sizes.entry(ccd).or_insert(kb);
+        *entry = (*entry).max(kb);
+    }
+    sizes
+}
+
+/// Identify the V-Cache CCD and its L3 size (MB) from per-CCD L3 sizes.
+///
+/// Stacked V-Cache triples a CCD's L3 (32MB -> 96MB), so on X3D parts sysfs
+/// names the CCD outright instead of us assuming it is CCD0. Returns `None`
+/// when no CCD exceeds the base size, i.e. this is not an X3D part.
+fn detect_vcache_from_l3(ccd_l3_kb: &BTreeMap<u32, u32>) -> Option<(u32, u32)> {
+    let (&ccd, &kb) = ccd_l3_kb.iter().max_by_key(|&(_, &kb)| kb)?;
+    if kb <= MAX_BASE_CCD_L3_KB {
+        return None;
+    }
+    debug!("V-Cache CCD {} detected from sysfs: L3 {}KB", ccd, kb);
+    Some((ccd, kb / 1024))
+}
+
+/// Detect V-Cache only on AMD processors.
+///
+/// Large shared LLCs are common on non-hybrid server CPUs too, so cache size
+/// alone is not enough to identify an X3D part across vendors.
+fn detect_vcache_for_model(model_name: &str, ccd_l3_kb: &BTreeMap<u32, u32>) -> Option<(u32, u32)> {
+    model_name
+        .contains("AMD")
+        .then(|| detect_vcache_from_l3(ccd_l3_kb))
+        .flatten()
+}
+
+/// Pick a CCD without stacked cache, for frequency-bound work.
+///
+/// On asymmetric X3D parts the plain die boosts higher than the stacked one.
+/// Returns `None` when every CCD carries V-Cache (Milan-X, Genoa-X, and any
+/// future all-stacked part): there is no faster-boosting die to steer to, and
+/// picking one anyway would send frequency-bound tasks to a slower core.
+fn detect_freq_ccd(ccd_l3_kb: &BTreeMap<u32, u32>) -> Option<u32> {
+    // BTreeMap iterates in key order, so this is the lowest plain CCD.
+    ccd_l3_kb
+        .iter()
+        .find(|&(_, &kb)| kb <= MAX_BASE_CCD_L3_KB)
+        .map(|(&ccd, _)| ccd)
+}
+
+/// Detect which CCD has V-Cache from the model name.
+///
+/// Fallback for when sysfs L3 sizes are unreadable; see detect_vcache_from_l3().
 fn detect_vcache_ccd(model_name: &str, nr_ccds: u32) -> Option<u32> {
     // For current X3D processors:
     // - 7800X3D: Single CCD, all cores have V-Cache
@@ -647,6 +747,95 @@ mod tests {
         assert!(is_x3d_processor("AMD Ryzen 9 9950X3D"));
         assert!(!is_x3d_processor("AMD Ryzen 9 7950X"));
         assert!(!is_x3d_processor("Intel Core i9-14900K"));
+    }
+
+    #[test]
+    fn test_detect_vcache_from_l3() {
+        // Multi-CCD X3D: the 96MB CCD wins regardless of its index.
+        let asymmetric = BTreeMap::from([(0, 98304), (1, 32768)]);
+        assert_eq!(detect_vcache_from_l3(&asymmetric), Some((0, 96)));
+
+        // V-Cache is not guaranteed to sit on CCD0.
+        let reversed = BTreeMap::from([(0, 32768), (1, 98304)]);
+        assert_eq!(detect_vcache_from_l3(&reversed), Some((1, 96)));
+
+        // Single-CCD X3D (7800X3D/9800X3D).
+        let single = BTreeMap::from([(0, 98304)]);
+        assert_eq!(detect_vcache_from_l3(&single), Some((0, 96)));
+
+        // Non-X3D parts have no CCD above the base L3 size.
+        let plain = BTreeMap::from([(0, 32768), (1, 32768)]);
+        assert_eq!(detect_vcache_from_l3(&plain), None);
+
+        assert_eq!(detect_vcache_from_l3(&BTreeMap::new()), None);
+    }
+
+    #[test]
+    fn test_vcache_detection_is_amd_only() {
+        let large_l3 = BTreeMap::from([(0, 98304)]);
+
+        assert_eq!(
+            detect_vcache_for_model("AMD Ryzen 9 9950X3D", &large_l3),
+            Some((0, 96))
+        );
+        assert_eq!(
+            detect_vcache_for_model("Intel Xeon with large shared L3", &large_l3),
+            None
+        );
+    }
+
+    #[test]
+    fn test_detect_freq_ccd() {
+        // 9950X3D: stacked CCD0, plain CCD1.
+        let asymmetric = BTreeMap::from([(0, 98304), (1, 32768)]);
+        assert_eq!(detect_freq_ccd(&asymmetric), Some(1));
+
+        // Same part with the dies swapped - must follow the cache, not index 1.
+        let reversed = BTreeMap::from([(0, 32768), (1, 98304)]);
+        assert_eq!(detect_freq_ccd(&reversed), Some(0));
+
+        // Every CCD stacked (Milan-X/Genoa-X): no die boosts higher, so there
+        // is nothing to steer frequency-bound work toward.
+        let all_stacked = BTreeMap::from([(0, 98304), (1, 98304)]);
+        assert_eq!(detect_freq_ccd(&all_stacked), None);
+
+        // Only the stacked CCDs matter; the rest tie and the lowest wins.
+        let many = BTreeMap::from([(0, 98304), (1, 98304), (2, 32768), (3, 32768)]);
+        assert_eq!(detect_freq_ccd(&many), Some(2));
+
+        assert_eq!(detect_freq_ccd(&BTreeMap::new()), None);
+    }
+
+    #[test]
+    fn test_freq_ccd_never_shadows_vcache_ccd() {
+        // Whatever the layout, the frequency die must not be a stacked one.
+        for layout in [
+            BTreeMap::from([(0, 98304), (1, 32768)]),
+            BTreeMap::from([(0, 32768), (1, 98304)]),
+            BTreeMap::from([(0, 98304), (1, 98304), (2, 32768)]),
+            BTreeMap::from([(0, 98304)]),
+        ] {
+            if let (Some((vcache_ccd, _)), Some(freq)) =
+                (detect_vcache_from_l3(&layout), detect_freq_ccd(&layout))
+            {
+                assert_ne!(freq, vcache_ccd, "layout {:?}", layout);
+                assert!(layout[&freq] <= MAX_BASE_CCD_L3_KB, "layout {:?}", layout);
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_ccd_l3_sizes_matches_sysfs() {
+        // Every CPU that reports an L3 must land in its CCD's bucket.
+        let Ok((cpu_to_ccd, _, _)) = detect_cpu_topology(4) else {
+            return;
+        };
+        let sizes = detect_ccd_l3_sizes(4, &cpu_to_ccd);
+        for cpu in 0..4u32 {
+            if let Some(kb) = read_cpu_l3_kb(cpu) {
+                assert_eq!(sizes.get(&cpu_to_ccd[cpu as usize]), Some(&kb));
+            }
+        }
     }
 
     #[test]

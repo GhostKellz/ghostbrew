@@ -17,19 +17,21 @@
  * - Kick preemption (preempt batch tasks for gaming)
  */
 
-#include "vmlinux.h"
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_tracing.h>
-#include <bpf/bpf_core_read.h>
+/*
+ * common.bpf.h must come first: it defines BPF_NO_KFUNC_PROTOTYPES before
+ * pulling in vmlinux.h, suppressing the generated kfunc prototypes that
+ * otherwise conflict with the scx __ksym declarations.
+ */
 #include "scx/common.bpf.h"
 #include "scx/compat.bpf.h"
+#include <bpf/bpf_core_read.h>
 
 char _license[] SEC("license") = "GPL";
 
 /*
  * Constants
  */
-#define GHOSTBREW_VERSION	"0.3.4"
+#define GHOSTBREW_VERSION	"0.3.5"
 #define MAX_CPUS		256
 #define MAX_CCDS		8
 #define NSEC_PER_MSEC		1000000ULL
@@ -53,6 +55,25 @@ char _license[] SEC("license") = "GPL";
 #define PRIO_GAMING		0
 #define PRIO_INTERACTIVE	1
 #define PRIO_BATCH		2
+
+/*
+ * vtime weight boosts, as a percentage applied to p->scx.weight.
+ *
+ * These buy CPU *share*, not latency: a boosted task is charged vtime more
+ * slowly, so it re-reaches the head of the queue sooner. Latency comes from
+ * preemption kicks and slice sizing instead. Keeping the two separate is the
+ * point - expressing priority as a fixed low vtime is what let a queued task be
+ * outranked forever by a stream of new arrivals.
+ *
+ * Because every boost is finite, a boosted task still accrues vtime and still
+ * yields to anything that has been waiting long enough. 1600 is roughly nice
+ * -8; the kernel's own nice range reaches 88761, so even gaming stays well
+ * inside what a user can already ask for with renice.
+ */
+#define WEIGHT_BOOST_GAMING	1600	/* 16x share */
+#define WEIGHT_BOOST_INTERACTIVE 400	/* 4x share */
+#define WEIGHT_BOOST_FUTEX	200	/* 2x, matches the old futex-holder boost */
+#define WEIGHT_PENALTY_WAKER	50	/* 0.5x for non-gaming busyloop wakers */
 
 /*
  * Event types for ringbuf streaming
@@ -139,6 +160,21 @@ const volatile bool prefcore_enabled = true; /* Honor AMD prefcore rankings when
  * User-exit info for error reporting
  */
 UEI_DEFINE(uei);
+
+/*
+ * Global virtual time clock.
+ *
+ * Every CCD DSQ is ordered by vtime and ops.dispatch() drains across CCDs, so
+ * the clock has to be global for vtimes from different DSQs to be comparable.
+ *
+ * Advanced in ops.running() to the vtime of whatever starts executing, so it
+ * tracks the frontier of scheduled work. A waiting task's vtime stays put while
+ * this advances past it, which is what ages it toward the head of the queue.
+ * Read/modify races between CPUs are benign and self-correcting - the clock only
+ * ever moves forward, and a lost update costs at most one task one dispatch of
+ * ordering.
+ */
+u64 vtime_now = 0;
 
 /*
  * Statistics (exported to userspace)
@@ -577,6 +613,10 @@ static inline int emit_event(u32 event_type, u32 pid, s32 cpu, u32 ccd,
 	if (!event)
 		return -1;  /* Ringbuf full, drop event */
 
+	/*
+	 * Deliberately not scx_bpf_now(): userspace orders these events across
+	 * CPUs, which needs a globally monotonic clock.
+	 */
 	event->timestamp_ns = bpf_ktime_get_ns();
 	event->event_type = event_type;
 	event->pid = pid;
@@ -607,6 +647,53 @@ static u64 ccd_to_dsq(u32 ccd)
 	if (ccd >= MAX_CCDS)
 		return FALLBACK_DSQ;
 	return CCD_DSQ_BASE + ccd;
+}
+
+/*
+ * Helper: Effective scheduling weight for vtime accounting
+ *
+ * Starts from p->scx.weight so nice values are honored, then applies the class
+ * boosts. A task with no context falls through at its nice weight, which is the
+ * right default: unclassified work should be ordinary, not privileged.
+ */
+static u64 task_vtime_weight(const struct task_struct *p,
+			     const struct task_ctx *tctx)
+{
+	u64 weight = p->scx.weight;
+
+	if (!weight)
+		weight = 100;
+
+	if (tctx) {
+		if (tctx->is_gaming)
+			weight = weight * WEIGHT_BOOST_GAMING / 100;
+		else if (tctx->is_interactive)
+			weight = weight * WEIGHT_BOOST_INTERACTIVE / 100;
+		else if (tctx->wakeup_freq_hz > 50)
+			/* Busyloop offender: charge it faster, not forever. */
+			weight = weight * WEIGHT_PENALTY_WAKER / 100;
+
+		if (tctx->flags & TASK_FLAG_FUTEX_HOLDER)
+			weight = weight * WEIGHT_BOOST_FUTEX / 100;
+	}
+
+	/* Never zero: it divides the vtime charge. */
+	return weight ?: 1;
+}
+
+/*
+ * Helper: vtime a task should be enqueued at
+ *
+ * Clamped to at most one slice of banked credit. A task that sleeps for a long
+ * time would otherwise return with a vtime far behind the clock and monopolize
+ * the CPU until it caught up.
+ */
+static u64 task_enqueue_vtime(const struct task_struct *p, u64 slice_ns)
+{
+	u64 vtime = p->scx.dsq_vtime;
+	u64 floor = vtime_now - slice_ns;
+
+	return time_before(vtime, floor) ? floor : vtime;
 }
 
 /*
@@ -887,7 +974,7 @@ static bool is_gaming_task(struct task_struct *p)
 		}
 
 		tctx->classification_valid = true;
-		tctx->classification_time = bpf_ktime_get_ns();
+		tctx->classification_time = scx_bpf_now();
 	}
 	return false;
 
@@ -898,7 +985,7 @@ found_gaming:
 		tctx->is_gpu_feeder = gpu_feeder;
 		tctx->workload_class = WORKLOAD_GAMING;
 		tctx->classification_valid = true;
-		tctx->classification_time = bpf_ktime_get_ns();
+		tctx->classification_time = scx_bpf_now();
 
 		/* Emit gaming detection event (only on first classification) */
 		emit_event(EVENT_GAMING_DETECTED,
@@ -953,8 +1040,16 @@ static bool is_smt_contended(s32 cpu)
 	if (!cctx || cctx->smt_sibling < 0)
 		return false;
 
-	/* Get the task running on SMT sibling */
-	sibling_task = __COMPAT_scx_bpf_cpu_curr(cctx->smt_sibling);
+	/*
+	 * Get the task running on the SMT sibling. scx_bpf_cpu_curr() landed in
+	 * v6.18; the older scx_bpf_cpu_rq() fallback was removed in v7.3, so on
+	 * pre-6.18 kernels we simply cannot see the sibling and report no
+	 * contention.
+	 */
+	if (!bpf_ksym_exists(scx_bpf_cpu_curr))
+		return false;
+
+	sibling_task = scx_bpf_cpu_curr(cctx->smt_sibling);
 	if (!sibling_task)
 		return false;
 
@@ -1575,7 +1670,7 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 	struct task_ctx *tctx;
 	struct cpu_ctx *cctx;
 	struct percpu_stats *pstats;
-	u64 vtime = 0;
+	u64 vtime, slice_ns;
 	u64 dsq_id = FALLBACK_DSQ;
 	s32 cpu, kick_cpu;
 
@@ -1590,7 +1685,7 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 
 	/* Store enqueue timestamp for latency tracking */
 	if (tctx) {
-		u64 now = bpf_ktime_get_ns();
+		u64 now = scx_bpf_now();
 		tctx->enqueue_at = now;
 
 		/*
@@ -1598,8 +1693,10 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 		 * Track inter-wakeup intervals to detect busyloop offenders
 		 */
 		if (enq_flags & SCX_ENQ_WAKEUP) {
+			u64 wake_now = bpf_ktime_get_ns();
+
 			if (tctx->last_wakeup_at > 0) {
-				u64 delta = now - tctx->last_wakeup_at;
+				u64 delta = wake_now - tctx->last_wakeup_at;
 
 				/* EWMA: avg = (7 * avg + delta) / 8 */
 				if (tctx->avg_wakeup_interval == 0)
@@ -1618,7 +1715,7 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 						__sync_fetch_and_add(&nr_high_wakeup_tasks, 1);
 				}
 			}
-			tctx->last_wakeup_at = now;
+			tctx->last_wakeup_at = wake_now;
 		}
 	}
 
@@ -1638,62 +1735,55 @@ void BPF_STRUCT_OPS(ghostbrew_enqueue, struct task_struct *p, u64 enq_flags)
 			tctx->last_ccd = cctx->ccd;
 	}
 
+	slice_ns = get_slice_ns();
+
+	/*
+	 * Order by the task's own virtual time. Class priority is expressed as a
+	 * weight in task_vtime_weight(), which changes how fast that time
+	 * advances - it is never pinned to a fixed value here, so no class can
+	 * indefinitely outrank a task that is already queued.
+	 */
+	vtime = task_enqueue_vtime(p, slice_ns);
+
 	if (tctx) {
-		/* BORE-style priority: lower vtime = higher priority */
 		if (tctx->is_gaming) {
-			vtime = 0;  /* Highest priority for gaming */
+			u32 target_ccd = tctx->wants_vcache && prefer_vcache ?
+					 vcache_ccd : (cctx ? cctx->ccd : 0);
+
 			__sync_fetch_and_add(&nr_gaming_tasks, 1);
 
 			/*
-			 * Kick preemption: if gaming task needs V-Cache CCD,
-			 * find a lower-priority task to preempt.
+			 * Latency, as distinct from share, comes from here.
+			 * Evict a lower-priority task from the CCD this one is
+			 * headed for so it runs now instead of waiting for its
+			 * turn in vtime order. This is why gaming no longer
+			 * needs - and must not have - a pinned vtime of 0.
 			 */
-			if (tctx->wants_vcache) {
-				kick_cpu = find_kick_victim_in_ccd(vcache_ccd, PRIO_GAMING);
-				if (kick_cpu >= 0) {
-					scx_bpf_kick_cpu(kick_cpu, SCX_KICK_PREEMPT);
-					__sync_fetch_and_add(&nr_preempt_kicks, 1);
+			kick_cpu = find_kick_victim_in_ccd(target_ccd, PRIO_GAMING);
+			if (kick_cpu >= 0) {
+				scx_bpf_kick_cpu(kick_cpu, SCX_KICK_PREEMPT);
+				__sync_fetch_and_add(&nr_preempt_kicks, 1);
 
-					/* Emit preempt kick event */
-					emit_event(EVENT_PREEMPT_KICK,
-						   p->pid, kick_cpu, vcache_ccd,
-						   PRIO_GAMING,  /* priority requesting */
-						   0,
-						   NULL);
-				}
+				/* Emit preempt kick event */
+				emit_event(EVENT_PREEMPT_KICK,
+					   p->pid, kick_cpu, target_ccd,
+					   PRIO_GAMING,  /* priority requesting */
+					   0,
+					   NULL);
 			}
 
 			/* Update percpu gaming stats */
 			if (pstats)
 				pstats->gaming_tasks++;
 		} else if (tctx->is_interactive) {
-			vtime = tctx->burst_time / 1000;
 			__sync_fetch_and_add(&nr_interactive_tasks, 1);
-		} else {
-			/* CPU hogs get penalized */
-			vtime = tctx->burst_time / 100;
-
-			/*
-			 * v0.3.0: Penalize high-frequency wakers (busyloop offenders)
-			 * Non-gaming tasks waking >50Hz get additional vtime penalty
-			 */
-			if (tctx->wakeup_freq_hz > 50) {
-				vtime += (u64)tctx->wakeup_freq_hz * 1000;
-				__sync_fetch_and_add(&nr_wakeup_penalties, 1);
-			}
-		}
-
-		/*
-		 * v0.3.0: Futex holder boost
-		 * Tasks holding locks get 2x priority boost (halve vtime)
-		 * to reduce lock contention impact on dependent tasks.
-		 */
-		if ((tctx->flags & TASK_FLAG_FUTEX_HOLDER) && vtime > 0) {
-			vtime = vtime >> 1;  /* 2x priority boost */
+		} else if (tctx->wakeup_freq_hz > 50) {
+			/* Busyloop offender: charged faster in task_vtime_weight() */
+			__sync_fetch_and_add(&nr_wakeup_penalties, 1);
 		}
 	}
 
-	scx_bpf_dsq_insert_vtime(p, dsq_id, get_slice_ns(), vtime, enq_flags);
+	scx_bpf_dsq_insert_vtime(p, dsq_id, slice_ns, vtime, enq_flags);
 }
 
 /*
@@ -1775,7 +1865,8 @@ void BPF_STRUCT_OPS(ghostbrew_dispatch, s32 cpu, struct task_struct *prev)
 /*
  * ops.running - Task started running
  *
- * Updates per-CCD load counters and per-CPU running state.
+ * Advances the global vtime clock and updates per-CCD load counters and
+ * per-CPU running state.
  */
 void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 {
@@ -1787,7 +1878,15 @@ void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 	struct cpu_perf_state *perf_state;
 	s32 cpu;
 	u32 key;
-	u64 now = bpf_ktime_get_ns();
+	u64 now = scx_bpf_now();
+
+	/*
+	 * Drag the global clock forward to whatever is now executing. This is
+	 * what makes a queued task's fixed vtime age: the frontier moves past
+	 * it, so it climbs toward the head without anyone having to touch it.
+	 */
+	if (time_before(vtime_now, p->scx.dsq_vtime))
+		vtime_now = p->scx.dsq_vtime;
 
 	tctx = get_task_ctx(p);
 	pstats = get_percpu_stats();
@@ -1797,7 +1896,14 @@ void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 
 		/* Calculate scheduling latency */
 		if (tctx->enqueue_at > 0) {
-			u64 latency = now - tctx->enqueue_at;
+			/*
+			 * enqueue_at may have been stamped on another CPU and
+			 * scx_bpf_now() is only non-decreasing per-CPU, so an
+			 * inverted sample is possible. Clamp it instead of
+			 * wrapping into a nonsense unsigned latency.
+			 */
+			u64 latency = now > tctx->enqueue_at ?
+				      now - tctx->enqueue_at : 0;
 
 			__sync_fetch_and_add(&latency_sum_ns, latency);
 			__sync_fetch_and_add(&latency_count, 1);
@@ -1896,7 +2002,8 @@ void BPF_STRUCT_OPS(ghostbrew_running, struct task_struct *p)
 /*
  * ops.stopping - Task stopped running
  *
- * Updates burst tracking and decrements per-CCD load counters.
+ * Charges virtual time for the slice just used, updates burst tracking, and
+ * decrements per-CCD load counters.
  */
 void BPF_STRUCT_OPS(ghostbrew_stopping, struct task_struct *p, bool runnable)
 {
@@ -1912,16 +2019,37 @@ void BPF_STRUCT_OPS(ghostbrew_stopping, struct task_struct *p, bool runnable)
 
 	tctx = get_task_ctx(p);
 	pstats = get_percpu_stats();
-	now = bpf_ktime_get_ns();
+	now = scx_bpf_now();
 
 	/* Track gaming preemptions (task still runnable = preempted) */
 	if (tctx && tctx->is_gaming && runnable)
 		__sync_fetch_and_add(&gaming_preempted, 1);
 
+	/*
+	 * How long this task just ran. Measured rather than derived from
+	 * p->scx.slice because slices here are dynamic and tickless mode hands
+	 * out SCX_SLICE_INF, either of which makes the granted-minus-remaining
+	 * trick meaningless.
+	 *
+	 * Without a task_ctx there is nowhere to have stamped a start time, so
+	 * charge a nominal slice. Erring high is the safe direction: the task
+	 * falls behind slightly instead of accruing no vtime at all and
+	 * outranking everything forever.
+	 */
+	if (tctx && tctx->last_run_at > 0 && now > tctx->last_run_at)
+		delta = now - tctx->last_run_at;
+	else
+		delta = get_slice_ns();
+
+	/*
+	 * Charge it, scaled down by the task's effective weight so that a
+	 * boosted class advances more slowly and thus returns to the head of the
+	 * queue sooner. This is the only place vtime grows.
+	 */
+	p->scx.dsq_vtime += delta * 100 / task_vtime_weight(p, tctx);
+
 	/* Update burst tracking */
 	if (tctx && tctx->last_run_at > 0) {
-		delta = now - tctx->last_run_at;
-
 		if (runnable) {
 			/* Still runnable - accumulate burst time */
 			tctx->burst_time += delta;
@@ -1979,7 +2107,7 @@ void BPF_STRUCT_OPS(ghostbrew_tick, struct task_struct *p)
 	struct ccd_load *vcache_load, *other_load;
 	s32 cpu;
 	u32 perf_cur;
-	u64 now = bpf_ktime_get_ns();
+	u64 now = scx_bpf_now();
 
 	cpu = bpf_get_smp_processor_id();
 	if (cpu >= MAX_CPUS)
@@ -2107,6 +2235,20 @@ void BPF_STRUCT_OPS(ghostbrew_dump, struct scx_dump_ctx *dctx)
 }
 
 /*
+ * ops.enable - Task became ours to schedule
+ *
+ * Start it at the current clock. Task vtime is zero-initialized at fork, and a
+ * zero vtime reads as infinitely old, so without this every new task - and
+ * every task inherited when the scheduler attaches - would take absolute
+ * priority over everything already queued and starve it. That is precisely the
+ * failure this scheduler used to have by pinning gaming tasks to vtime 0.
+ */
+void BPF_STRUCT_OPS(ghostbrew_enable, struct task_struct *p)
+{
+	p->scx.dsq_vtime = vtime_now;
+}
+
+/*
  * ops.init - Initialize scheduler and per-CCD DSQs
  */
 s32 BPF_STRUCT_OPS_SLEEPABLE(ghostbrew_init)
@@ -2199,8 +2341,16 @@ SCX_OPS_DEFINE(ghostbrew_ops,
 	       .running		= (void *)ghostbrew_running,
 	       .stopping	= (void *)ghostbrew_stopping,
 	       .tick		= (void *)ghostbrew_tick,
+	       .enable		= (void *)ghostbrew_enable,
 	       .dump		= (void *)ghostbrew_dump,
 	       .init		= (void *)ghostbrew_init,
 	       .exit		= (void *)ghostbrew_exit,
+	       /*
+		* Deliberately 6x tighter than the kernel's 30s default and max
+		* (SCX_WATCHDOG_MAX_TIMEOUT). A runnable task waiting this long
+		* means the scheduler has a bug, and failing fast into EEVDF
+		* beats a 30-second stall. Userspace reads the resulting exit
+		* info and reports it rather than silently continuing.
+		*/
 	       .timeout_ms	= 5000,
 	       .name		= "ghostbrew");

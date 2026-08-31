@@ -1,3 +1,11 @@
+scx-ghostbrew (0.3.5-1) unstable; urgency=medium
+
+  * Refreshed vendored sched_ext headers for Linux 7.3 compatibility
+  * Added load-only BPF verification and scheduler ejection recovery
+  * Improved X3D topology detection and virtual-time fairness
+
+ -- ghostkellz <ckelley@ghostkellz.sh>  Mon, 31 Aug 2026 12:00:00 -0400
+
 scx-ghostbrew (0.3.4-1) unstable; urgency=medium
 
   * Bumped nix, toml, which, dirs, and criterion to new major versions

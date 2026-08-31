@@ -1,6 +1,6 @@
 [package]
 name = "scx_ghostbrew"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 authors = ["ghostkellz <ckelley@ghostkellz.sh>"]
 license = "MIT"

@@ -5,6 +5,45 @@ All notable changes to GhostBrew will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-08-31
+
+### Added
+
+- Added `--verify-only` to load the BPF program, populate its maps, and exit
+  before attaching the scheduler.
+- Added kernel ejection reporting and automatic scheduler reinitialization after
+  CPU hotplug, including protection against rapid restart loops.
+- Recorded the exact upstream provenance and resync procedure for the vendored
+  sched_ext headers and generated `vmlinux.h`.
+
+### Fixed
+
+- Replaced the static burst-derived DSQ priority with a virtual-time clock that
+  charges measured runtime by effective task weight. Waiting tasks now retain
+  their place while running tasks advance, with one slice of bounded idle credit.
+- Preserved gaming latency through targeted preemption while ensuring gaming,
+  interactive, futex-holder, and high-frequency-waker adjustments remain finite.
+- Honored task nice weights in virtual-time accounting.
+- Derived the V-Cache CCD and cache size from per-CCD sysfs L3 data instead of
+  assuming CCD0, while restricting cache-size inference to AMD processors.
+- Selected a frequency CCD only when sysfs identifies a non-stacked die, avoiding
+  invalid steering on all-stacked-cache systems.
+- Reported scheduler watchdog and verifier exits instead of continuing silently
+  after the kernel has fallen back to its normal scheduler.
+- Kept cross-CPU wakeup and event timing on a globally comparable clock while
+  using the cheaper sched_ext clock for CPU-local accounting.
+
+### Changed
+
+- Refreshed vendored sched_ext headers to the Linux 7.3-rc1 interface while
+  retaining load compatibility with the Linux 7.2 target BTF.
+- Reduced SMT contention detection gracefully on kernels that predate
+  `scx_bpf_cpu_curr()` instead of relying on the removed rq helper.
+- Kept the five-second sched_ext watchdog so scheduler defects fail quickly back
+  to the kernel scheduler rather than allowing a prolonged stall.
+
+---
+
 ## [0.3.4] - 2026-08-03
 
 ### Added

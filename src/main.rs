@@ -27,6 +27,7 @@ use clap_complete::generate;
 use libbpf_rs::MapCore;
 use libbpf_rs::skel::{OpenSkel, SkelBuilder};
 use log::{debug, info, warn};
+use scx_utils::{uei_exited, uei_set_size};
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,7 +47,7 @@ const RUNTIME_TUNABLES_SIZE: usize = 24;
 const TUNABLE_OFF_GPU_BOUND_MODE: usize = 20;
 
 /// GhostBrew - AMD Zen4/Zen5 X3D and Intel Hybrid optimized sched-ext scheduler
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "scx_ghostbrew")]
 #[command(author = "ghostkellz <ckelley@ghostkellz.sh>")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -106,6 +107,12 @@ struct Args {
     /// Analyze MangoHud frame time log (show stats without running scheduler)
     #[arg(long)]
     analyze_frametime: Option<Option<std::path::PathBuf>>,
+
+    /// Load and verify the BPF program, then exit without attaching the
+    /// scheduler. Exercises the verifier and map setup against the running
+    /// kernel without taking over scheduling.
+    #[arg(long)]
+    verify_only: bool,
 }
 
 /// CPU context structure matching BPF side
@@ -420,6 +427,11 @@ impl<'a> Scheduler<'a> {
             rodata.default_slice_ns = settings.slice_ns;
         }
 
+        // Size the debug-dump area. Without this the kernel still records why it
+        // ejected us, but the accompanying dump is never allocated and is thrown
+        // away - which is exactly the detail needed to diagnose an ejection.
+        uei_set_size!(open_skel, ghostbrew_ops, uei);
+
         // Load BPF program
         debug!("Loading BPF program...");
         let mut skel = open_skel.load().context("Failed to load BPF program")?;
@@ -437,6 +449,27 @@ impl<'a> Scheduler<'a> {
         // Initialize runtime tunables map
         debug!("Initializing runtime tunables...");
         Self::init_runtime_tunables(&mut skel, &settings, gaming_mode, work_mode)?;
+
+        // --verify-only stops here: the program is loaded and every map is
+        // populated, but the struct_ops below is what actually takes over
+        // scheduling. Exiting now leaves the running system untouched.
+        //
+        // process::exit() skips Drop, so this must stay ahead of anything that
+        // mutates host state and relies on a destructor to undo it - EppManager
+        // in particular, which only writes from the run loop. Keep it that way:
+        // if host mutation ever moves into init(), this needs to unwind instead.
+        if args.verify_only {
+            info!("BPF program loaded and verified; not attaching (--verify-only)");
+            info!(
+                "  {} CPUs, {} CCDs, V-Cache CCD {:?}, freq CCD {:?}, L3 {:?}MB",
+                topology.nr_cpus,
+                topology.nr_ccds,
+                topology.vcache_ccd,
+                topology.freq_ccd,
+                topology.vcache_l3_mb
+            );
+            std::process::exit(0);
+        }
 
         // Attach struct_ops scheduler
         debug!("Attaching scheduler...");
@@ -801,7 +834,11 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    fn run(&mut self, shutdown: Arc<AtomicBool>) -> Result<()> {
+    /// Run until shutdown or until the kernel ejects the scheduler.
+    ///
+    /// Returns `true` when the kernel asked us to come back (SCX_ECODE_ACT_RESTART,
+    /// which is what a CPU hotplug raises), `false` for a normal shutdown.
+    fn run(&mut self, shutdown: Arc<AtomicBool>) -> Result<bool> {
         info!("GhostBrew v{} running...", env!("CARGO_PKG_VERSION"));
         info!("Burst threshold: {} ns", self.settings.burst_threshold_ns);
         info!("Time slice: {} ns", self.settings.slice_ns);
@@ -828,6 +865,14 @@ impl<'a> Scheduler<'a> {
         let mut last_stats = Instant::now();
 
         while !shutdown.load(Ordering::Relaxed) {
+            // The kernel can eject us at any time - watchdog timeout, a runtime
+            // error, or CPU hotplug. Nothing else in this loop would notice, so
+            // without this check the daemon keeps polling and reporting stats
+            // while the kernel has already fallen back to EEVDF.
+            if uei_exited!(&self.skel, uei) {
+                break;
+            }
+
             // Poll ringbuf for events (100ms timeout, non-blocking)
             // Build ringbuf in each iteration to avoid lifetime issues
             {
@@ -883,6 +928,12 @@ impl<'a> Scheduler<'a> {
             self.export_mangohud_stats();
         }
 
+        // Capture why the loop ended *before* tearing anything down. Dropping
+        // the struct_ops link below makes the kernel record its own UNREG exit
+        // over the top, which would mask the ejection reason - and with it the
+        // SCX_ECODE_ACT_RESTART we need to act on.
+        let exit = uei_exited!(&self.skel, uei).then(|| scx_utils::uei_read!(&self.skel, uei));
+
         info!("GhostBrew shutting down...");
 
         // Restore original EPP values
@@ -891,7 +942,18 @@ impl<'a> Scheduler<'a> {
         // Detach scheduler
         self.struct_ops.take();
 
-        Ok(())
+        // Report only after the host is restored, so an error exit still leaves
+        // EPP as we found it. report() prints the kernel's reason and turns a
+        // genuine scheduler error into an Err; a hotplug eject is
+        // SCX_EXIT_UNREG_KERN, which it treats as normal and leaves the decision
+        // to should_restart().
+        match exit {
+            Some(uei) => {
+                uei.report()?;
+                Ok(uei.should_restart())
+            }
+            None => Ok(false),
+        }
     }
 
     /// Update the gaming_pids BPF map with detected gaming processes
@@ -1605,8 +1667,49 @@ fn main() -> Result<()> {
     })
     .context("Failed to set signal handler")?;
 
-    // Initialize and run scheduler
-    let mut open_object = MaybeUninit::uninit();
-    let mut scheduler = Scheduler::init(args, &mut open_object)?;
-    scheduler.run(shutdown)
+    // Initialize and run scheduler, reinitializing whenever the kernel asks us
+    // to come back. We implement neither ops.cpu_online() nor ops.cpu_offline(),
+    // so the kernel ejects us on any CPU hotplug - including the offlining that
+    // suspend/resume does - and signals SCX_ECODE_ACT_RESTART.
+    //
+    // This is a full re-init rather than a reattach on purpose: topology is
+    // baked into rodata before load, so reattaching the same skeleton would
+    // carry the stale CPU and CCD maps across the hotplug that invalidated them.
+    // Anything that ejects us the instant we attach would otherwise spin
+    // reloading the BPF program on a machine that is already in trouble.
+    //
+    // Tuned to catch only that pathology, not legitimate hotplug: toggling SMT
+    // offlines every sibling at once, and each event ejects us separately, so a
+    // healthy restart burst is both normal and possibly long. Giving up would
+    // strand the machine on EEVDF - worse than the spin - so the window is kept
+    // tight enough that only a scheduler that cannot stay up at all trips it.
+    const MAX_RAPID_RESTARTS: u32 = 10;
+    const RAPID_RESTART: Duration = Duration::from_secs(1);
+    let mut rapid_restarts = 0;
+
+    loop {
+        let mut open_object = MaybeUninit::uninit();
+        let mut scheduler = Scheduler::init(args.clone(), &mut open_object)?;
+        let attached_at = Instant::now();
+        let restart = scheduler.run(shutdown.clone())?;
+
+        if !restart || shutdown.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        if attached_at.elapsed() < RAPID_RESTART {
+            rapid_restarts += 1;
+            if rapid_restarts >= MAX_RAPID_RESTARTS {
+                bail!(
+                    "scheduler ejected {} times, each within {:?} of attaching; giving up",
+                    MAX_RAPID_RESTARTS,
+                    RAPID_RESTART
+                );
+            }
+        } else {
+            rapid_restarts = 0;
+        }
+
+        info!("Kernel requested restart (CPU hotplug); reinitializing");
+    }
 }
